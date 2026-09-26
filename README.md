@@ -12,6 +12,8 @@ NeoForge 1.21.1 server-side admin notes with LuckPerms permissions.
 
 Each note now has its own UUID, so multiple notes can be created by the same author.
 
+Player arguments have autocomplete for currently online players and previously stored players. Autocomplete does not restrict input, so an offline player can still be entered manually even if their name is not in the suggestions.
+
 ## Permissions
 
 - `admin_notes.read`
