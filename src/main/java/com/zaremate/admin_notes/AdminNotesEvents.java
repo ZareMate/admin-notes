@@ -105,7 +105,8 @@ public final class AdminNotesEvents {
     private static int removeNote(CommandSourceStack source, String targetName) {
         if (!(source.getEntity() instanceof ServerPlayer admin)) return 0;
 
-        UUID targetUuid = findPlayerUuid(targetName);
+        ResolvedPlayer resolved = resolvePlayer(source, targetName);
+        UUID targetUuid = resolved == null ? null : resolved.uuid();
         if (targetUuid == null) {
             source.sendFailure(Component.literal("Player not found."));
             return 0;
@@ -191,11 +192,6 @@ public final class AdminNotesEvents {
 
     private static PlayerNotes getOrCreate(UUID uuid, String name) {
         return PLAYERS.computeIfAbsent(uuid.toString(), ignored -> new PlayerNotes(name));
-    }
-
-    private static UUID findPlayerUuid(String name) {
-        ResolvedPlayer resolved = resolvePlayer(null, name);
-        return resolved == null ? null : resolved.uuid();
     }
 
     private static ResolvedPlayer resolvePlayer(CommandSourceStack source, String name) {
