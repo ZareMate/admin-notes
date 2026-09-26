@@ -82,7 +82,7 @@ public final class AdminNotesEvents {
                                         ctx.getSource(),
                                         StringArgumentType.getString(ctx, "player")))))
                 .then(Commands.argument("playerOrId", StringArgumentType.word())
-                        .suggests(AdminNotesEvents::suggestPlayersAndNoteIds)
+                        .suggests(AdminNotesEvents::suggestRootPlayersAndNoteIds)
                         .requires(source -> hasPermission(source, AdminNotesConfig.READ_PERMISSION.get()))
                         .executes(ctx -> showNotesOrSearch(
                                 ctx.getSource(),
@@ -125,46 +125,63 @@ public final class AdminNotesEvents {
         return builder.buildFuture();
     }
 
-    private static CompletableFuture<Suggestions> suggestPlayersAndNoteIds(
+    private static CompletableFuture<Suggestions> suggestRootPlayersAndNoteIds(
             CommandContext<CommandSourceStack> context,
             SuggestionsBuilder builder
     ) {
         String remaining = builder.getRemaining().toLowerCase(Locale.ROOT);
-        Set<String> suggestions = new HashSet<>();
 
+        // Only offer note UUIDs when the input already looks like the beginning
+        // of a UUID. Otherwise autocomplete remains focused on player names.
+        boolean looksLikeUuidPrefix = remaining.matches("[0-9a-f]{1,8}(-[0-9a-f]{0,4})?");
+
+        Set<String> names = new HashSet<>();
         var server = context.getSource().getServer();
         if (server == null) {
             return builder.buildFuture();
         }
 
-        // Online players.
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-            suggestions.add(player.getGameProfile().getName());
+            names.add(player.getGameProfile().getName());
         }
 
-        // Previously stored/offline players.
         synchronized (DATA_LOCK) {
             for (PlayerNotes player : PLAYERS.values()) {
                 if (player != null && player.name != null && !player.name.isBlank()) {
-                    suggestions.add(player.name);
-                }
-
-                // Note UUIDs can also be searched directly with /note <uuid>.
-                if (player == null || player.notes == null) continue;
-                for (AdminNotesAPI.Note note : player.notes) {
-                    if (note != null && note.id() != null) {
-                        suggestions.add(note.id().toString());
-                    }
+                    names.add(player.name);
                 }
             }
         }
 
-        suggestions.stream()
-                .filter(value -> value.toLowerCase(Locale.ROOT).startsWith(remaining))
+        // Player names first.
+        names.stream()
+                .filter(name -> name.toLowerCase(Locale.ROOT).startsWith(remaining))
                 .sorted(String.CASE_INSENSITIVE_ORDER)
                 .forEach(builder::suggest);
 
+        // UUIDs only appear after a UUID-looking prefix has been entered.
+        if (looksLikeUuidPrefix) {
+            synchronized (DATA_LOCK) {
+                PLAYERS.values().stream()
+                        .filter(player -> player != null && player.notes != null)
+                        .flatMap(player -> player.notes.stream())
+                        .filter(note -> note != null && note.id() != null)
+                        .map(note -> note.id().toString())
+                        .filter(id -> id.startsWith(remaining))
+                        .distinct()
+                        .sorted()
+                        .forEach(builder::suggest);
+            }
+        }
+
         return builder.buildFuture();
+    }
+
+    private static CompletableFuture<Suggestions> suggestPlayersAndNoteIds(
+            CommandContext<CommandSourceStack> context,
+            SuggestionsBuilder builder
+    ) {
+        return suggestPlayers(context, builder);
     }
 
     private static boolean hasPermission(CommandSourceStack source, String permission) {
