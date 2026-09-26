@@ -499,7 +499,6 @@ public final class AdminNotesEvents {
         }
 
         List<AdminNotesAPI.Note> notes = AdminNotesAPI.getNotes(target.uuid());
-        boolean hasAssInfo = showAssInfo(source, target.uuid());
 
         source.sendSuccess(() -> Component.literal(
                 "───────────────────────────────────"
@@ -511,6 +510,8 @@ public final class AdminNotesEvents {
 
         source.sendSuccess(() -> Component.literal("Player: ")
                 .append(Component.literal(target.name()).withColor(0xFFFFFF)), false);
+
+        boolean hasAssInfo = showAssInfo(source, target.uuid());
 
         List<AdminNotesAPI.Note> visibleNotes = notes.stream()
                 .filter(note -> !isAssCategoryNote(note))
