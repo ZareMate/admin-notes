@@ -362,12 +362,13 @@ public final class AdminNotesEvents {
                 .append(Component.literal(target.name()).withColor(0xFFFFFF)), false);
 
         boolean hasAssInfo = showAssInfo(source, target.uuid());
+        boolean hasDiscordLinkInfo = showDiscordLinkInfo(source, target.uuid());
 
         List<AdminNotesAPI.Note> visibleNotes = notes.stream()
                 .filter(note -> !isAssCategoryNote(note))
                 .toList();
 
-        if (visibleNotes.isEmpty() && !hasAssInfo) {
+        if (visibleNotes.isEmpty() && !hasAssInfo && !hasDiscordLinkInfo) {
             source.sendSuccess(() -> Component.literal(
                     "No notes have been added for this player."
             ), false);
@@ -459,6 +460,62 @@ public final class AdminNotesEvents {
             return false;
         } catch (Throwable ex) {
             LOGGER.debug("Failed to read Airport Security System API.", ex);
+            return false;
+        }
+    }
+
+    private static boolean showDiscordLinkInfo(CommandSourceStack source, UUID playerUuid) {
+        try {
+            Class<?> apiClass = Class.forName(
+                    "com.zaremate.discordlink.DiscordLinkAPI"
+            );
+
+            var method = apiClass.getMethod(
+                    "getPlayerLink",
+                    UUID.class
+            );
+
+            Object optionalObject = method.invoke(null, playerUuid);
+            if (!(optionalObject instanceof java.util.Optional<?> optional)
+                    || optional.isEmpty()) {
+                return false;
+            }
+
+            Object link = optional.get();
+            String discordTag = (String) link.getClass()
+                    .getMethod("discordTag")
+                    .invoke(link);
+
+            String discordId = (String) link.getClass()
+                    .getMethod("discordId")
+                    .invoke(link);
+
+            source.sendSuccess(() -> Component.literal("[DISCORD]")
+                    .withStyle(style -> style
+                            .withColor(0x7289DA)
+                            .withBold(true)), false);
+
+            String display = discordTag != null && !discordTag.isBlank()
+                    ? discordTag
+                    : discordId;
+
+            source.sendSuccess(() -> Component.literal(
+                    "linked: " + display
+            ), false);
+
+            if (discordId != null && !discordId.isBlank()) {
+                source.sendSuccess(() -> Component.literal(
+                        "Discord ID: " + discordId
+                ).withColor(0x777777), false);
+            }
+
+            source.sendSuccess(() -> Component.literal(""), false);
+            return true;
+        } catch (ClassNotFoundException ignored) {
+            // Discord Link is optional.
+            return false;
+        } catch (Throwable ex) {
+            LOGGER.debug("Failed to read Discord Link API.", ex);
             return false;
         }
     }
