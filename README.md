@@ -152,6 +152,29 @@ int removed =
         AdminNotesAPI.clearNotes(playerUuid);
 ```
 
+### System categories
+
+Integrations can maintain a named system category that is displayed in the notes list:
+
+```java
+AdminNotesAPI.upsertSystemCategoryNote(
+        playerUuid,
+        "ASS",
+        "x-ray detected (last: 26-09-2026)"
+);
+```
+
+Category notes are system-generated entries. The category name is available to the notes UI as the system author value. The Airport Security System uses the `ASS` category, which the UI renders in gold and without exposing its internal note UUID.
+
+A category can be removed with:
+
+```java
+AdminNotesAPI.removeSystemCategoryNotes(
+        playerUuid,
+        "ASS"
+);
+```
+
 ### Get stored player name
 
 ```java
