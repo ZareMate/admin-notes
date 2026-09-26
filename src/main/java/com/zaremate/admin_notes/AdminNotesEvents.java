@@ -91,7 +91,7 @@ public final class AdminNotesEvents {
         synchronized (DATA_LOCK) {
             PlayerNotes player = getOrCreate(target.uuid(), target.name());
             player.name = target.name();
-            player.notes.put(admin.getUUID().toString(), new Note(
+            player.notes.put(admin.getUUID().toString(), new AdminNotesAPI.Note(
                     admin.getGameProfile().getName(),
                     noteText,
                     System.currentTimeMillis()
@@ -176,7 +176,7 @@ public final class AdminNotesEvents {
         source.sendSuccess(() -> Component.literal("Player: ").append(Component.literal(notes.name).withColor(0xFFFFFF)), false);
 
         int count = 0;
-        for (Note note : notes.notes.values()) {
+        for (AdminNotesAPI.Note note : notes.notes.values()) {
             count++;
             source.sendSuccess(() -> Component.literal("[" + note.author + "]").withStyle(s -> s.withColor(0x55FFFF).withBold(true)), false);
             source.sendSuccess(() -> Component.literal(note.text), false);
