@@ -247,7 +247,7 @@ public final class AdminNotesEvents {
         List<AdminNotesAPI.Note> notes = AdminNotesAPI.getNotes(target.uuid());
 
         source.sendSuccess(() -> Component.literal(
-                "────────────────────────────────────"
+                "───────────────────────────────────"
         ).withColor(0x555555), false);
 
         source.sendSuccess(() -> Component.literal(
@@ -284,7 +284,7 @@ public final class AdminNotesEvents {
         }
 
         source.sendSuccess(() -> Component.literal(
-                "────────────────────────────────────"
+                "───────────────────────────────────"
         ).withColor(0x555555), false);
 
         return 1;
