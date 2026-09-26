@@ -82,6 +82,7 @@ public final class AdminNotesEvents {
                                         ctx.getSource(),
                                         StringArgumentType.getString(ctx, "player")))))
                 .then(Commands.argument("playerOrId", StringArgumentType.word())
+                        .suggests(AdminNotesEvents::suggestPlayersAndNoteIds)
                         .requires(source -> hasPermission(source, AdminNotesConfig.READ_PERMISSION.get()))
                         .executes(ctx -> showNotesOrSearch(
                                 ctx.getSource(),
@@ -120,6 +121,34 @@ public final class AdminNotesEvents {
                 .filter(name -> name.toLowerCase(Locale.ROOT).startsWith(remaining))
                 .sorted(String.CASE_INSENSITIVE_ORDER)
                 .forEach(builder::suggest);
+
+        return builder.buildFuture();
+    }
+
+    private static CompletableFuture<Suggestions> suggestPlayersAndNoteIds(
+            CommandContext<CommandSourceStack> context,
+            SuggestionsBuilder builder
+    ) {
+        String remaining = builder.getRemaining().toLowerCase(Locale.ROOT);
+
+        // Player-name autocomplete.
+        suggestPlayers(context, builder);
+
+        // Note UUID autocomplete, useful when copying an ID from chat.
+        synchronized (DATA_LOCK) {
+            for (PlayerNotes player : PLAYERS.values()) {
+                if (player == null || player.notes == null) continue;
+
+                for (AdminNotesAPI.Note note : player.notes) {
+                    if (note == null || note.id() == null) continue;
+
+                    String id = note.id().toString();
+                    if (id.toLowerCase(Locale.ROOT).startsWith(remaining)) {
+                        builder.suggest(id);
+                    }
+                }
+            }
+        }
 
         return builder.buildFuture();
     }
@@ -278,7 +307,7 @@ public final class AdminNotesEvents {
                         "[" + author + "]"
                 ).withStyle(s -> s.withColor(0x55FFFF).withBold(true)), false);
 
-                source.sendSuccess(() -> Component.literal(note.text()), false);
+                sendMultiline(source, note.text());
 
                 source.sendSuccess(() -> Component.literal(
                         formatDate(note.createdAt())
@@ -336,6 +365,25 @@ public final class AdminNotesEvents {
 
         source.sendFailure(Component.literal("Note not found: " + noteId));
         return 0;
+    }
+
+    private static void sendMultiline(CommandSourceStack source, String text) {
+        if (text == null) {
+            source.sendSuccess(() -> Component.literal(""), false);
+            return;
+        }
+
+        // Notes may come from APIs/webhooks with escaped newlines such as "\\n".
+        // Display those as actual Minecraft chat line breaks.
+        String normalized = text
+                .replace("\\\\r\\\\n", "\\n")
+                .replace("\\\\n", "\\n")
+                .replace("\\\\r", "\\n");
+
+        String[] lines = normalized.split("\\n", -1);
+        for (String line : lines) {
+            source.sendSuccess(() -> Component.literal(line), false);
+        }
     }
 
     private static UUID parseUuid(String value) {
