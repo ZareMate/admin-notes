@@ -131,7 +131,8 @@ public final class AdminNotesEvents {
     }
 
     private static int clearNotes(CommandSourceStack source, String targetName) {
-        UUID targetUuid = findPlayerUuid(targetName);
+        ResolvedPlayer resolved = resolvePlayer(source, targetName);
+        UUID targetUuid = resolved == null ? null : resolved.uuid();
         if (targetUuid == null) {
             source.sendFailure(Component.literal("Player not found."));
             return 0;
