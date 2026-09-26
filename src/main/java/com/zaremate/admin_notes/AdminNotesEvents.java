@@ -198,7 +198,9 @@ public final class AdminNotesEvents {
                 PLAYERS.values().stream()
                         .filter(player -> player != null && player.notes != null)
                         .flatMap(player -> player.notes.stream())
-                        .filter(note -> note != null && note.id() != null)
+                        .filter(note -> note != null
+                                && note.id() != null
+                                && !isAssCategoryNote(note))
                         .map(note -> note.id().toString())
                         .filter(id -> id.startsWith(remaining))
                         .distinct()
