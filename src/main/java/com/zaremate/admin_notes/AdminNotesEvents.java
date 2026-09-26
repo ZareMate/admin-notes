@@ -178,9 +178,9 @@ public final class AdminNotesEvents {
         int count = 0;
         for (AdminNotesAPI.Note note : notes.notes.values()) {
             count++;
-            source.sendSuccess(() -> Component.literal("[" + note.author + "]").withStyle(s -> s.withColor(0x55FFFF).withBold(true)), false);
-            source.sendSuccess(() -> Component.literal(note.text), false);
-            source.sendSuccess(() -> Component.literal(formatDate(note.createdAt)).withStyle(s -> s.withColor(0x555555)), false);
+            source.sendSuccess(() -> Component.literal("[" + note.author() + "]").withStyle(s -> s.withColor(0x55FFFF).withBold(true)), false);
+            source.sendSuccess(() -> Component.literal(note.text()), false);
+            source.sendSuccess(() -> Component.literal(formatDate(note.createdAt())).withStyle(s -> s.withColor(0x555555)), false);
             source.sendSuccess(() -> Component.literal(""), false);
         }
 
