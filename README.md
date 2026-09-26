@@ -33,7 +33,7 @@ Airport Security System offense commands are implemented by the Airport Security
 
 Other server-side mods can use the public `com.zaremate.admin_notes.AdminNotesAPI` class to read and manage notes directly.
 
-The API is built around **unique note IDs**. A player can have any number of notes from the same author.
+The API is built around **unique note IDs**. A player can have any number of notes from the same author. System category notes are a special case: they remain system-generated but expose a category label such as `ASS` for the notes UI.
 
 ### Note structure
 
@@ -102,7 +102,7 @@ The note gets a new unique UUID every time, even when the same author adds multi
 
 ### Add an automatic system note
 
-System notes do not require an author UUID or author name:
+Ordinary system notes do not require an author UUID or author name:
 
 ```java
 AdminNotesAPI.Note note =
