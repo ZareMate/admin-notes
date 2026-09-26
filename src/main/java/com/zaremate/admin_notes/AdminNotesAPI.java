@@ -2,7 +2,7 @@ package com.zaremate.admin_notes;
 
 import net.neoforged.neoforge.server.ServerLifecycleHooks;
 
-import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -27,17 +27,26 @@ public final class AdminNotesAPI {
      * @param playerUuid UUID of the player whose notes should be read
      * @return immutable snapshot of the player's notes; empty when the player has no notes
      */
-    public static List<Note> getNotes(UUID playerUuid) {
+    public static Map<UUID, Note> getNotes(UUID playerUuid) {
         Objects.requireNonNull(playerUuid, "playerUuid");
         ensureLoaded();
 
         synchronized (AdminNotesEvents.DATA_LOCK) {
             AdminNotesEvents.PlayerNotes player = AdminNotesEvents.PLAYERS.get(playerUuid.toString());
             if (player == null || player.notes == null || player.notes.isEmpty()) {
-                return List.of();
+                return Map.of();
             }
 
-            return List.copyOf(player.notes.values());
+            Map<UUID, Note> result = new LinkedHashMap<>();
+            for (Map.Entry<String, Note> entry : player.notes.entrySet()) {
+                try {
+                    result.put(UUID.fromString(entry.getKey()), entry.getValue());
+                } catch (IllegalArgumentException ignored) {
+                    // Ignore malformed author UUIDs rather than breaking API reads.
+                }
+            }
+
+            return Map.copyOf(result);
         }
     }
 
