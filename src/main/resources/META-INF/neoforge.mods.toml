@@ -1,0 +1,10 @@
+modLoader="javafml"
+loaderVersion="[1,)"
+license="MIT"
+
+[[mods]]
+modId="admin_notes"
+version="1.0.0"
+displayName="Admin Notes"
+authors="ZareMate"
+description='''Per-player notes for server administrators with LuckPerms support.'''
