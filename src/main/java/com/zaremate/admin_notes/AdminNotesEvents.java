@@ -130,25 +130,39 @@ public final class AdminNotesEvents {
             SuggestionsBuilder builder
     ) {
         String remaining = builder.getRemaining().toLowerCase(Locale.ROOT);
+        Set<String> suggestions = new HashSet<>();
 
-        // Player-name autocomplete.
-        suggestPlayers(context, builder);
+        var server = context.getSource().getServer();
+        if (server == null) {
+            return builder.buildFuture();
+        }
 
-        // Note UUID autocomplete, useful when copying an ID from chat.
+        // Online players.
+        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+            suggestions.add(player.getGameProfile().getName());
+        }
+
+        // Previously stored/offline players.
         synchronized (DATA_LOCK) {
             for (PlayerNotes player : PLAYERS.values()) {
+                if (player != null && player.name != null && !player.name.isBlank()) {
+                    suggestions.add(player.name);
+                }
+
+                // Note UUIDs can also be searched directly with /note <uuid>.
                 if (player == null || player.notes == null) continue;
-
                 for (AdminNotesAPI.Note note : player.notes) {
-                    if (note == null || note.id() == null) continue;
-
-                    String id = note.id().toString();
-                    if (id.toLowerCase(Locale.ROOT).startsWith(remaining)) {
-                        builder.suggest(id);
+                    if (note != null && note.id() != null) {
+                        suggestions.add(note.id().toString());
                     }
                 }
             }
         }
+
+        suggestions.stream()
+                .filter(value -> value.toLowerCase(Locale.ROOT).startsWith(remaining))
+                .sorted(String.CASE_INSENSITIVE_ORDER)
+                .forEach(builder::suggest);
 
         return builder.buildFuture();
     }
@@ -167,7 +181,7 @@ public final class AdminNotesEvents {
     private static int addNote(CommandSourceStack source, String targetName, String text) {
         if (!(source.getEntity() instanceof ServerPlayer admin)) return 0;
 
-        String noteText = text.trim();
+        String noteText = decodeEscapes(text).trim();
         if (noteText.isEmpty()) {
             source.sendFailure(Component.literal("Note cannot be empty."));
             return 0;
@@ -350,8 +364,8 @@ public final class AdminNotesEvents {
                             .append(Component.literal(playerName).withColor(0xFFFFFF)), false);
                     source.sendSuccess(() -> Component.literal("Author: ")
                             .append(Component.literal(author).withColor(0x55FFFF)), false);
-                    source.sendSuccess(() -> Component.literal("Text: ")
-                            .append(Component.literal(note.text()).withColor(0xFFFFFF)), false);
+                    source.sendSuccess(() -> Component.literal("Text:"), false);
+                    sendMultiline(source, note.text());
                     source.sendSuccess(() -> Component.literal("Created: ")
                             .append(Component.literal(formatDate(note.createdAt())).withColor(0x555555)), false);
                     source.sendSuccess(() -> clickableNoteId(note.id()), false);
@@ -373,17 +387,64 @@ public final class AdminNotesEvents {
             return;
         }
 
-        // Notes may come from APIs/webhooks with escaped newlines such as "\\n".
-        // Display those as actual Minecraft chat line breaks.
-        String normalized = text
-                .replace("\\\\r\\\\n", "\\n")
-                .replace("\\\\n", "\\n")
-                .replace("\\\\r", "\\n");
-
-        String[] lines = normalized.split("\\n", -1);
-        for (String line : lines) {
+        for (String line : decodeEscapes(text).split("\\n", -1)) {
             source.sendSuccess(() -> Component.literal(line), false);
         }
+    }
+
+    /**
+     * Converts common escaped sequences into their actual characters.
+     *
+     * Supported:
+     * \\n  newline
+     * \\r  carriage return
+     * \\t  tab
+     * \\b  backspace
+     * \\f  form feed
+     * \\\\  literal backslash
+     * \\uXXXX  Unicode character
+     *
+     * Unknown escapes keep the backslash, so URLs and other text are not
+     * accidentally changed.
+     */
+    private static String decodeEscapes(String text) {
+        StringBuilder result = new StringBuilder(text.length());
+
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+
+            if (c != '\\' || i + 1 >= text.length()) {
+                result.append(c);
+                continue;
+            }
+
+            char next = text.charAt(++i);
+
+            switch (next) {
+                case 'n' -> result.append('\n');
+                case 'r' -> result.append('\r');
+                case 't' -> result.append('\t');
+                case 'b' -> result.append('\b');
+                case 'f' -> result.append('\f');
+                case '\\' -> result.append('\\');
+                case 'u' -> {
+                    if (i + 4 < text.length()) {
+                        String hex = text.substring(i + 1, i + 5);
+                        try {
+                            result.append((char) Integer.parseInt(hex, 16));
+                            i += 4;
+                        } catch (NumberFormatException e) {
+                            result.append('\\').append('u');
+                        }
+                    } else {
+                        result.append('\\').append('u');
+                    }
+                }
+                default -> result.append('\\').append(next);
+            }
+        }
+
+        return result.toString();
     }
 
     private static UUID parseUuid(String value) {
