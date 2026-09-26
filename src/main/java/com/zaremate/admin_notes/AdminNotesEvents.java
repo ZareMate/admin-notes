@@ -499,6 +499,7 @@ public final class AdminNotesEvents {
         }
 
         List<AdminNotesAPI.Note> notes = AdminNotesAPI.getNotes(target.uuid());
+        boolean hasAssInfo = showAssInfo(source, target.uuid());
 
         source.sendSuccess(() -> Component.literal(
                 "───────────────────────────────────"
@@ -511,23 +512,22 @@ public final class AdminNotesEvents {
         source.sendSuccess(() -> Component.literal("Player: ")
                 .append(Component.literal(target.name()).withColor(0xFFFFFF)), false);
 
-        if (notes.isEmpty()) {
+        List<AdminNotesAPI.Note> visibleNotes = notes.stream()
+                .filter(note -> !isAssCategoryNote(note))
+                .toList();
+
+        if (visibleNotes.isEmpty() && !hasAssInfo) {
             source.sendSuccess(() -> Component.literal(
                     "No notes have been added for this player."
             ), false);
         } else {
-            for (AdminNotesAPI.Note note : notes) {
-                boolean assNote = isAssCategoryNote(note);
-                String author = assNote
-                        ? "ASS"
-                        : note.isSystem() ? "SYSTEM" : note.author();
+            for (AdminNotesAPI.Note note : visibleNotes) {
+                String author = note.isSystem() ? "SYSTEM" : note.author();
 
                 source.sendSuccess(() -> Component.literal(
                         "[" + author + "]"
                 ).withStyle(s -> s
-                        .withColor(assNote
-                                ? 0xFFAA00
-                                : note.isSystem() ? 0xFF5555 : 0x55FFFF)
+                        .withColor(note.isSystem() ? 0xFF5555 : 0x55FFFF)
                         .withBold(true)), false);
 
                 sendMultiline(source, note.text());
@@ -536,9 +536,7 @@ public final class AdminNotesEvents {
                         formatDate(note.createdAt())
                 ).withStyle(s -> s.withColor(0x555555)), false);
 
-                if (!assNote) {
-                    source.sendSuccess(() -> clickableNoteId(note.id()), false);
-                }
+                source.sendSuccess(() -> clickableNoteId(note.id()), false);
 
                 source.sendSuccess(() -> Component.literal(""), false);
             }
@@ -549,6 +547,71 @@ public final class AdminNotesEvents {
         ).withColor(0x555555), false);
 
         return 1;
+    }
+
+    private static boolean showAssInfo(CommandSourceStack source, UUID playerUuid) {
+        try {
+            Class<?> apiClass = Class.forName(
+                    "com.zaremate.airport_security_system.AirportSecuritySystemAPI"
+            );
+
+            var method = apiClass.getMethod(
+                    "getPlayerOffense",
+                    UUID.class
+            );
+
+            Object optionalObject = method.invoke(null, playerUuid);
+            if (!(optionalObject instanceof java.util.Optional<?> optional)
+                    || optional.isEmpty()) {
+                return false;
+            }
+
+            Object offense = optional.get();
+            String status = (String) offense.getClass()
+                    .getMethod("status")
+                    .invoke(offense);
+
+            @SuppressWarnings("unchecked")
+            Map<String, String> detectionDates = (Map<String, String>)
+                    offense.getClass().getMethod("detectionDates").invoke(offense);
+
+            String clearedDate = (String) offense.getClass()
+                    .getMethod("clearedDate")
+                    .invoke(offense);
+
+            if ((detectionDates == null || detectionDates.isEmpty())
+                    && (clearedDate == null || clearedDate.isBlank())) {
+                return false;
+            }
+
+            source.sendSuccess(() -> Component.literal("[ASS]")
+                    .withStyle(s -> s.withColor(0xFFAA00).withBold(true)), false);
+
+            if (detectionDates != null) {
+                for (Map.Entry<String, String> entry : detectionDates.entrySet()) {
+                    source.sendSuccess(() -> Component.literal(
+                            entry.getKey() + " detected (last: " + entry.getValue() + ")"
+                    ).withColor(0xFF5555), false);
+                }
+            }
+
+            if ("CLEAN".equalsIgnoreCase(status)
+                    && clearedDate != null
+                    && !clearedDate.isBlank()) {
+                source.sendSuccess(() -> Component.literal(
+                        "cleared (last: " + clearedDate + ")"
+                ).withColor(0x55FF55), false);
+            }
+
+            source.sendSuccess(() -> Component.literal(""), false);
+            return true;
+        } catch (ClassNotFoundException ignored) {
+            // Airport Security System is optional.
+            return false;
+        } catch (Throwable ex) {
+            LOGGER.debug("Failed to read Airport Security System API.", ex);
+            return false;
+        }
     }
 
     private static int showNoteById(CommandSourceStack source, UUID noteId) {
