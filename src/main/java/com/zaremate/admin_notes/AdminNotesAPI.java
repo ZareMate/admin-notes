@@ -41,6 +41,31 @@ public final class AdminNotesAPI {
     }
 
     /**
+     * Returns a snapshot of UUIDs for every player with stored Admin Notes.
+     *
+     * <p>This is intended for integrations that need to inspect their own
+     * system-generated notes without accessing Admin Notes internals.</p>
+     */
+    public static List<UUID> getPlayers() {
+        ensureLoaded();
+
+        synchronized (AdminNotesEvents.DATA_LOCK) {
+            return AdminNotesEvents.PLAYERS.keySet().stream()
+                    .map(AdminNotesAPI::parseUuid)
+                    .filter(Objects::nonNull)
+                    .toList();
+        }
+    }
+
+    private static UUID parseUuid(String value) {
+        try {
+            return UUID.fromString(value);
+        } catch (IllegalArgumentException ignored) {
+            return null;
+        }
+    }
+
+    /**
      * Returns one note by its unique note ID.
      */
     public static Optional<Note> getNote(UUID playerUuid, UUID noteId) {
