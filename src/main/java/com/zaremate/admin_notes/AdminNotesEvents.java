@@ -3,8 +3,9 @@ package com.zaremate.admin_notes;
 import com.mojang.logging.LogUtils;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.mojang.brigadier.arguments.StringArgumentType;
+import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
-import net.minecraft.commands.arguments.EntityArgument;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.storage.LevelResource;
@@ -36,27 +37,27 @@ public final class AdminNotesEvents {
                 .requires(AdminNotesEvents::hasAnyPermission)
                 .then(Commands.literal("add")
                         .requires(source -> hasPermission(source, AdminNotesConfig.ADD_PERMISSION.get()))
-                        .then(Commands.argument("player", net.minecraft.commands.arguments.StringArgumentType.word())
-                                .then(Commands.argument("text", net.minecraft.commands.arguments.StringArgumentType.greedyString())
+                        .then(Commands.argument("player", StringArgumentType.word())
+                                .then(Commands.argument("text", StringArgumentType.greedyString())
                                         .executes(ctx -> addNote(
                                                 ctx.getSource(),
-                                                net.minecraft.commands.arguments.StringArgumentType.getString(ctx, "player"),
-                                                net.minecraft.commands.arguments.StringArgumentType.getString(ctx, "text")
+                                                StringArgumentType.getString(ctx, "player"),
+                                                StringArgumentType.getString(ctx, "text")
                                         )))))
                 .then(Commands.literal("rm")
                         .requires(source -> hasPermission(source, AdminNotesConfig.REMOVE_PERMISSION.get()))
-                        .then(Commands.argument("player", net.minecraft.commands.arguments.StringArgumentType.word())
+                        .then(Commands.argument("player", StringArgumentType.word())
                                 .executes(ctx -> removeNote(ctx.getSource(),
-                                        net.minecraft.commands.arguments.StringArgumentType.getString(ctx, "player")))))
+                                        StringArgumentType.getString(ctx, "player")))))
                 .then(Commands.literal("clear")
                         .requires(source -> hasPermission(source, AdminNotesConfig.CLEAR_PERMISSION.get()))
-                        .then(Commands.argument("player", net.minecraft.commands.arguments.StringArgumentType.word())
+                        .then(Commands.argument("player", StringArgumentType.word())
                                 .executes(ctx -> clearNotes(ctx.getSource(),
-                                        net.minecraft.commands.arguments.StringArgumentType.getString(ctx, "player")))))
-                .then(Commands.argument("player", net.minecraft.commands.arguments.StringArgumentType.word())
+                                        StringArgumentType.getString(ctx, "player")))))
+                .then(Commands.argument("player", StringArgumentType.word())
                         .requires(source -> hasPermission(source, AdminNotesConfig.READ_PERMISSION.get()))
                         .executes(ctx -> showNotes(ctx.getSource(),
-                                net.minecraft.commands.arguments.StringArgumentType.getString(ctx, "player"))));
+                                StringArgumentType.getString(ctx, "player"))));
 
         event.getDispatcher().register(root);
     }
