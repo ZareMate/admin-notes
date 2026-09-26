@@ -336,7 +336,9 @@ public final class AdminNotesEvents {
 
                 source.sendSuccess(() -> Component.literal(
                         "[" + author + "]"
-                ).withStyle(s -> s.withColor(0x55FFFF).withBold(true)), false);
+                ).withStyle(s -> s
+                        .withColor(note.isSystem() ? 0xFF5555 : 0x55FFFF)
+                        .withBold(true)), false);
 
                 sendMultiline(source, note.text());
 
@@ -380,7 +382,8 @@ public final class AdminNotesEvents {
                     source.sendSuccess(() -> Component.literal("Player: ")
                             .append(Component.literal(playerName).withColor(0xFFFFFF)), false);
                     source.sendSuccess(() -> Component.literal("Author: ")
-                            .append(Component.literal(author).withColor(0x55FFFF)), false);
+                            .append(Component.literal(author)
+                                    .withColor(note.isSystem() ? 0xFF5555 : 0x55FFFF)), false);
                     source.sendSuccess(() -> Component.literal("Text:"), false);
                     sendMultiline(source, note.text());
                     source.sendSuccess(() -> Component.literal("Created: ")
@@ -495,6 +498,43 @@ public final class AdminNotesEvents {
 
         var server = source != null ? source.getServer() : null;
         if (server == null) return null;
+
+        // Accept a player UUID anywhere a player name is accepted.
+        UUID targetUuid = parseUuid(target);
+        if (targetUuid != null) {
+            ServerPlayer onlineByUuid = server.getPlayerList().getPlayer(targetUuid);
+            if (onlineByUuid != null) {
+                return new ResolvedPlayer(
+                        onlineByUuid.getUUID(),
+                        onlineByUuid.getGameProfile().getName()
+                );
+            }
+
+            synchronized (DATA_LOCK) {
+                PlayerNotes stored = PLAYERS.get(targetUuid.toString());
+                if (stored != null) {
+                    String storedName = stored.name == null || stored.name.isBlank()
+                            ? targetUuid.toString()
+                            : stored.name;
+                    return new ResolvedPlayer(targetUuid, storedName);
+                }
+            }
+
+            var profileCache = server.getProfileCache();
+            if (profileCache != null) {
+                var profile = profileCache.get(targetUuid);
+                if (profile.isPresent()) {
+                    return new ResolvedPlayer(
+                            profile.get().getId(),
+                            profile.get().getName()
+                    );
+                }
+            }
+
+            // A valid UUID is enough to identify a player for notes even when
+            // the player is offline and their profile is not cached.
+            return new ResolvedPlayer(targetUuid, targetUuid.toString());
+        }
 
         ServerPlayer online = server.getPlayerList().getPlayerByName(target);
         if (online != null) {
