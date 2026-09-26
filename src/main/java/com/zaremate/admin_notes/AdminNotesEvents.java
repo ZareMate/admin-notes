@@ -567,31 +567,29 @@ public final class AdminNotesEvents {
             }
 
             Object offense = optional.get();
-            String status = (String) offense.getClass()
-                    .getMethod("status")
-                    .invoke(offense);
 
             @SuppressWarnings("unchecked")
             Map<String, String> detectionDates = (Map<String, String>)
                     offense.getClass().getMethod("detectionDates").invoke(offense);
 
+            String status = (String) offense.getClass()
+                    .getMethod("status")
+                    .invoke(offense);
+
             String clearedDate = (String) offense.getClass()
                     .getMethod("clearedDate")
                     .invoke(offense);
 
-            if ((detectionDates == null || detectionDates.isEmpty())
-                    && (clearedDate == null || clearedDate.isBlank())) {
-                return false;
-            }
-
             source.sendSuccess(() -> Component.literal("[ASS]")
-                    .withStyle(s -> s.withColor(0xFFAA00).withBold(true)), false);
+                    .withStyle(style -> style
+                            .withColor(0xFFAA00)
+                            .withBold(true)), false);
 
             if (detectionDates != null) {
                 for (Map.Entry<String, String> entry : detectionDates.entrySet()) {
                     source.sendSuccess(() -> Component.literal(
                             entry.getKey() + " detected (last: " + entry.getValue() + ")"
-                    ).withColor(0xFF5555), false);
+                    ), false);
                 }
             }
 
@@ -600,7 +598,7 @@ public final class AdminNotesEvents {
                     && !clearedDate.isBlank()) {
                 source.sendSuccess(() -> Component.literal(
                         "cleared (last: " + clearedDate + ")"
-                ).withColor(0x55FF55), false);
+                ), false);
             }
 
             source.sendSuccess(() -> Component.literal(""), false);
@@ -622,6 +620,7 @@ public final class AdminNotesEvents {
 
                 for (AdminNotesAPI.Note note : player.notes) {
                     if (!note.id().equals(noteId)) continue;
+                    if (isAssCategoryNote(note)) continue;
 
                     String playerName = player.name == null || player.name.isBlank()
                             ? entry.getKey()
