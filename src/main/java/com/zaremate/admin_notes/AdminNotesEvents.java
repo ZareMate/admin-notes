@@ -89,6 +89,22 @@ public final class AdminNotesEvents {
                                 StringArgumentType.getString(ctx, "playerOrId"))));
 
         event.getDispatcher().register(root);
+
+        var offenses = Commands.literal("offenses")
+                .requires(source -> hasPermission(source, AdminNotesConfig.READ_PERMISSION.get()))
+                .then(Commands.argument("playerOrUuid", StringArgumentType.word())
+                        .suggests(AdminNotesEvents::suggestPlayers)
+                        .executes(ctx -> showOffenses(
+                                ctx.getSource(),
+                                StringArgumentType.getString(ctx, "playerOrUuid"))));
+
+        event.getDispatcher().register(offenses);
+
+        event.getDispatcher().register(
+                Commands.literal("offense_rate")
+                        .requires(source -> hasPermission(source, AdminNotesConfig.READ_PERMISSION.get()))
+                        .executes(ctx -> showOffenseRate(ctx.getSource()))
+        );
     }
 
     private static CompletableFuture<Suggestions> suggestPlayers(
@@ -329,6 +345,192 @@ public final class AdminNotesEvents {
                 "Cleared " + removed + " note(s) for " + target.name()
         ), false);
         return 1;
+    }
+
+    private static int showOffenses(CommandSourceStack source, String identifier) {
+        UUID playerUuid = resolvePlayerUuid(identifier);
+
+        if (playerUuid == null) {
+            source.sendFailure(Component.literal("Player not found: " + identifier));
+            return 0;
+        }
+
+        List<AdminNotesAPI.Note> notes = AdminNotesAPI.getNotes(playerUuid);
+        Map<String, String> offenses = new java.util.TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+
+        for (AdminNotesAPI.Note note : notes) {
+            if (!note.isSystem() || note.text() == null) continue;
+
+            String text = decodeEscapes(note.text());
+            for (String line : text.split("\\R")) {
+                String trimmed = line.trim();
+                if (!trimmed.toLowerCase(Locale.ROOT).contains("detected")) continue;
+
+                int detectedIndex = trimmed.toLowerCase(Locale.ROOT).indexOf(" detected");
+                if (detectedIndex <= 0) continue;
+
+                String category = trimmed.substring(0, detectedIndex).trim();
+                String suffix = trimmed.substring(detectedIndex).trim();
+                offenses.put(category, suffix);
+            }
+        }
+
+        String name = AdminNotesAPI.getPlayerName(playerUuid).orElse(playerUuid.toString());
+
+        source.sendSuccess(() -> Component.literal("───────────────────────────────────").withColor(0x555555), false);
+        source.sendSuccess(() -> Component.literal("PLAYER OFFENSES")
+                .withStyle(s -> s.withColor(0xFFAA00).withBold(true)), false);
+        source.sendSuccess(() -> Component.literal("Player: ")
+                .append(Component.literal(name).withColor(0xFFFFFF)), false);
+        source.sendSuccess(() -> Component.literal("UUID: ")
+                .append(Component.literal(playerUuid.toString()).withColor(0x777777)), false);
+
+        if (offenses.isEmpty()) {
+            source.sendSuccess(() -> Component.literal("No Airport Security System detections recorded."), false);
+        } else {
+            for (Map.Entry<String, String> entry : offenses.entrySet()) {
+                source.sendSuccess(() -> Component.literal(entry.getKey() + " detected " + entry.getValue())
+                        .withColor(0xFF5555), false);
+            }
+        }
+
+        source.sendSuccess(() -> Component.literal("───────────────────────────────────").withColor(0x555555), false);
+        return 1;
+    }
+
+    private static int showOffenseRate(CommandSourceStack source) {
+        int totalPlayers = 0;
+        int clearedPlayers = 0;
+        Map<String, Integer> detectionPlayers = new java.util.TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+        Map<String, Integer> detectionEvents = new java.util.TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+
+        synchronized (DATA_LOCK) {
+            for (Map.Entry<String, PlayerNotes> entry : PLAYERS.entrySet()) {
+                PlayerNotes player = entry.getValue();
+                if (player == null || player.notes == null) continue;
+
+                totalPlayers++;
+                boolean detected = false;
+                Set<String> categories = new HashSet<>();
+
+                for (AdminNotesAPI.Note note : player.notes) {
+                    if (!note.isSystem() || note.text() == null) continue;
+
+                    String text = decodeEscapes(note.text());
+                    if (text.trim().toLowerCase(Locale.ROOT).startsWith("cleared (last:")) {
+                        continue;
+                    }
+
+                    for (String line : text.split("\\R")) {
+                        String normalized = line.trim().toLowerCase(Locale.ROOT);
+                        int detectedIndex = normalized.indexOf(" detected");
+                        if (detectedIndex <= 0) continue;
+
+                        String category = line.trim().substring(0, detectedIndex).trim();
+                        if (category.isBlank()) continue;
+
+                        detected = true;
+                        categories.add(category);
+                    }
+                }
+
+                if (!detected) {
+                    clearedPlayers++;
+                } else {
+                    for (String category : categories) {
+                        detectionPlayers.merge(category, 1, Integer::sum);
+                        detectionEvents.merge(category, 1, Integer::sum);
+                    }
+                }
+            }
+        }
+
+        source.sendSuccess(() -> Component.literal("───────────────────────────────────").withColor(0x555555), false);
+        source.sendSuccess(() -> Component.literal("AIRPORT SECURITY OFFENSE RATE")
+                .withStyle(s -> s.withColor(0xFFAA00).withBold(true)), false);
+        source.sendSuccess(() -> Component.literal("Players recorded: " + totalPlayers), false);
+        source.sendSuccess(() -> Component.literal("Players currently cleared: " + clearedPlayers
+                + " (" + percent(clearedPlayers, totalPlayers) + "%)"), false);
+        source.sendSuccess(() -> Component.literal("Players with detections: " + (totalPlayers - clearedPlayers)
+                + " (" + percent(totalPlayers - clearedPlayers, totalPlayers) + "%)"), false);
+
+        source.sendSuccess(() -> Component.literal(""), false);
+        source.sendSuccess(() -> Component.literal("Cheat type distribution:"), false);
+
+        if (detectionPlayers.isEmpty()) {
+            source.sendSuccess(() -> Component.literal("No detections recorded."), false);
+        } else {
+            int detectedPlayersTotal = Math.max(1, totalPlayers - clearedPlayers);
+
+            for (Map.Entry<String, Integer> entry : detectionPlayers.entrySet()) {
+                int count = entry.getValue();
+                source.sendSuccess(() -> Component.literal(
+                        entry.getKey() + ": " + count + " player(s) — "
+                                + percent(count, detectedPlayersTotal) + "% of detected players"
+                ).withColor(0xFF5555), false);
+            }
+
+            source.sendSuccess(() -> Component.literal(""), false);
+            source.sendSuccess(() -> Component.literal("Total detection records by type:"), false);
+
+            for (Map.Entry<String, Integer> entry : detectionEvents.entrySet()) {
+                source.sendSuccess(() -> Component.literal(
+                        entry.getKey() + ": " + entry.getValue()
+                ), false);
+            }
+        }
+
+        source.sendSuccess(() -> Component.literal("───────────────────────────────────").withColor(0x555555), false);
+        return 1;
+    }
+
+    private static String percent(int numerator, int denominator) {
+        if (denominator <= 0) return "0.0";
+        return String.format(Locale.ROOT, "%.1f", numerator * 100.0 / denominator);
+    }
+
+    private static UUID resolvePlayerUuid(String identifier) {
+        String target = identifier == null ? "" : identifier.trim();
+        if (target.isEmpty()) return null;
+
+        UUID uuid = parseUuid(target);
+        if (uuid != null) {
+            synchronized (DATA_LOCK) {
+                if (PLAYERS.containsKey(uuid.toString())) return uuid;
+            }
+
+            var server = net.neoforged.neoforge.server.ServerLifecycleHooks.getCurrentServer();
+            if (server != null && server.getPlayerList().getPlayer(uuid) != null) return uuid;
+            return null;
+        }
+
+        synchronized (DATA_LOCK) {
+            for (Map.Entry<String, PlayerNotes> entry : PLAYERS.entrySet()) {
+                PlayerNotes player = entry.getValue();
+                if (player != null && player.name != null
+                        && player.name.equalsIgnoreCase(target)) {
+                    try {
+                        return UUID.fromString(entry.getKey());
+                    } catch (IllegalArgumentException ignored) {
+                        return null;
+                    }
+                }
+            }
+        }
+
+        var server = net.neoforged.neoforge.server.ServerLifecycleHooks.getCurrentServer();
+        if (server != null) {
+            ServerPlayer online = server.getPlayerList().getPlayerByName(target);
+            if (online != null) return online.getUUID();
+
+            var profileCache = server.getProfileCache();
+            if (profileCache != null) {
+                var profile = profileCache.get(target);
+                if (profile.isPresent()) return profile.get().getId();
+            }
+        }
+
+        return null;
     }
 
     private static int showNotesOrSearch(CommandSourceStack source, String target) {
