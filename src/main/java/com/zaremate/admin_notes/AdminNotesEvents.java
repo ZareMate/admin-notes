@@ -29,6 +29,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -74,6 +75,7 @@ public final class AdminNotesEvents {
                 .then(Commands.literal("clear")
                         .requires(source -> hasPermission(source, AdminNotesConfig.CLEAR_PERMISSION.get()))
                         .then(Commands.argument("player", StringArgumentType.word())
+                                .suggests(AdminNotesEvents::suggestPlayers)
                                 .executes(ctx -> clearNotes(
                                         ctx.getSource(),
                                         StringArgumentType.getString(ctx, "player")))))
@@ -91,7 +93,7 @@ public final class AdminNotesEvents {
             CommandContext<CommandSourceStack> context,
             SuggestionsBuilder builder
     ) {
-        String remaining = builder.getRemaining().toLowerCase();
+        String remaining = builder.getRemaining().toLowerCase(Locale.ROOT);
         Set<String> names = new HashSet<>();
 
         var server = context.getSource().getServer();
@@ -114,7 +116,7 @@ public final class AdminNotesEvents {
         }
 
         names.stream()
-                .filter(name -> name.toLowerCase().startsWith(remaining))
+                .filter(name -> name.toLowerCase(Locale.ROOT).startsWith(remaining))
                 .sorted(String.CASE_INSENSITIVE_ORDER)
                 .forEach(builder::suggest);
 
