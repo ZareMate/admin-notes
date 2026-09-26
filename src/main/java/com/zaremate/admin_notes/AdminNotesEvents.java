@@ -1,9 +1,9 @@
 package com.zaremate.admin_notes;
 
-import com.mojang.logging.LogUtils;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.mojang.brigadier.arguments.StringArgumentType;
+import com.mojang.logging.LogUtils;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
@@ -75,6 +75,7 @@ public final class AdminNotesEvents {
 
     private static int addNote(CommandSourceStack source, String targetName, String text) {
         if (!(source.getEntity() instanceof ServerPlayer admin)) return 0;
+
         String noteText = text.trim();
         if (noteText.isEmpty()) {
             source.sendFailure(Component.literal("Note cannot be empty."));
@@ -105,78 +106,77 @@ public final class AdminNotesEvents {
     private static int removeNote(CommandSourceStack source, String targetName) {
         if (!(source.getEntity() instanceof ServerPlayer admin)) return 0;
 
-        ResolvedPlayer resolved = resolvePlayer(source, targetName);
-        UUID targetUuid = resolved == null ? null : resolved.uuid();
-        if (targetUuid == null) {
-            source.sendFailure(Component.literal("Player not found."));
+        ResolvedPlayer target = resolvePlayer(source, targetName);
+        if (target == null) {
+            source.sendFailure(Component.literal("Player not found: " + targetName));
             return 0;
         }
 
         synchronized (DATA_LOCK) {
-            PlayerNotes target = PLAYERS.get(targetUuid.toString());
-            if (target == null || target.notes == null) {
-                source.sendFailure(Component.literal("No notes found for " + targetName + "."));
+            PlayerNotes notes = PLAYERS.get(target.uuid().toString());
+            if (notes == null || notes.notes == null) {
+                source.sendFailure(Component.literal("No notes found for " + target.name() + "."));
                 return 0;
             }
 
-            if (target.notes.remove(admin.getUUID().toString()) == null) {
-                source.sendFailure(Component.literal("You do not have a note for " + target.name + "."));
+            if (notes.notes.remove(admin.getUUID().toString()) == null) {
+                source.sendFailure(Component.literal("You do not have a note for " + notes.name + "."));
                 return 0;
             }
+
             saveData();
         }
 
-        source.sendSuccess(() -> Component.literal("Your note for " + targetName + " was removed."), false);
+        source.sendSuccess(() -> Component.literal("Your note for " + target.name() + " was removed."), false);
         return 1;
     }
 
     private static int clearNotes(CommandSourceStack source, String targetName) {
-        ResolvedPlayer resolved = resolvePlayer(source, targetName);
-        UUID targetUuid = resolved == null ? null : resolved.uuid();
-        if (targetUuid == null) {
-            source.sendFailure(Component.literal("Player not found."));
+        ResolvedPlayer target = resolvePlayer(source, targetName);
+        if (target == null) {
+            source.sendFailure(Component.literal("Player not found: " + targetName));
             return 0;
         }
 
         synchronized (DATA_LOCK) {
-            PlayerNotes target = PLAYERS.get(targetUuid.toString());
-            if (target == null || target.notes == null) {
-                source.sendFailure(Component.literal("No notes found for " + targetName + "."));
+            PlayerNotes notes = PLAYERS.get(target.uuid().toString());
+            if (notes == null || notes.notes == null) {
+                source.sendFailure(Component.literal("No notes found for " + target.name() + "."));
                 return 0;
             }
 
-            int removed = target.notes.size();
-            target.notes.clear();
+            int removed = notes.notes.size();
+            notes.notes.clear();
             saveData();
 
             source.sendSuccess(() -> Component.literal(
-                    "Cleared " + removed + " note(s) for " + target.name), false);
+                    "Cleared " + removed + " note(s) for " + notes.name), false);
         }
         return 1;
     }
 
     private static int showNotes(CommandSourceStack source, String targetName) {
-        UUID targetUuid = findPlayerUuid(targetName);
-        if (targetUuid == null) {
-            source.sendFailure(Component.literal("Player not found."));
+        ResolvedPlayer target = resolvePlayer(source, targetName);
+        if (target == null) {
+            source.sendFailure(Component.literal("Player not found: " + targetName));
             return 0;
         }
 
-        PlayerNotes target;
+        PlayerNotes notes;
         synchronized (DATA_LOCK) {
-            target = PLAYERS.get(targetUuid.toString());
-            if (target == null) {
-                source.sendFailure(Component.literal("No notes found for " + targetName + "."));
+            notes = PLAYERS.get(target.uuid().toString());
+            if (notes == null) {
+                source.sendFailure(Component.literal("No notes found for " + target.name() + "."));
                 return 0;
             }
         }
 
         source.sendSuccess(() -> Component.literal("────────────────────────────────────").withColor(0x555555), false);
         source.sendSuccess(() -> Component.literal("PLAYER NOTES").withStyle(s -> s.withColor(0xFFAA00).withBold(true)), false);
-        source.sendSuccess(() -> Component.literal("Player: ").append(Component.literal(target.name).withColor(0xFFFFFF)), false);
+        source.sendSuccess(() -> Component.literal("Player: ").append(Component.literal(notes.name).withColor(0xFFFFFF)), false);
 
         int count = 0;
-        for (Note note : target.notes.values()) {
+        for (Note note : notes.notes.values()) {
             count++;
             source.sendSuccess(() -> Component.literal("[" + note.author + "]").withStyle(s -> s.withColor(0x55FFFF).withBold(true)), false);
             source.sendSuccess(() -> Component.literal(note.text), false);
@@ -184,8 +184,9 @@ public final class AdminNotesEvents {
             source.sendSuccess(() -> Component.literal(""), false);
         }
 
-        if (count == 0)
+        if (count == 0) {
             source.sendSuccess(() -> Component.literal("No notes have been added for this player."), false);
+        }
 
         source.sendSuccess(() -> Component.literal("────────────────────────────────────").withColor(0x555555), false);
         return 1;
@@ -196,29 +197,36 @@ public final class AdminNotesEvents {
     }
 
     private static ResolvedPlayer resolvePlayer(CommandSourceStack source, String name) {
-        String target = name.trim();
+        String target = name == null ? "" : name.trim();
         if (target.isEmpty()) return null;
 
         var server = source != null ? source.getServer() : null;
         if (server == null) return null;
 
         ServerPlayer online = server.getPlayerList().getPlayerByName(target);
-        if (online != null)
+        if (online != null) {
             return new ResolvedPlayer(online.getUUID(), online.getGameProfile().getName());
+        }
 
         synchronized (DATA_LOCK) {
-            String lower = target.toLowerCase();
             for (Map.Entry<String, PlayerNotes> entry : PLAYERS.entrySet()) {
-                if (entry.getValue() != null && entry.getValue().name != null && entry.getValue().name.equalsIgnoreCase(target))
-                    return new ResolvedPlayer(UUID.fromString(entry.getKey()), entry.getValue().name);
+                PlayerNotes player = entry.getValue();
+                if (player == null || player.name == null || !player.name.equalsIgnoreCase(target)) continue;
+
+                try {
+                    return new ResolvedPlayer(UUID.fromString(entry.getKey()), player.name);
+                } catch (IllegalArgumentException ignored) {
+                    LOGGER.warn("Ignoring invalid player UUID '{}' in admin notes.", entry.getKey());
+                }
             }
         }
 
         var cache = server.getProfileCache();
         if (cache != null) {
             var profile = cache.get(target);
-            if (profile.isPresent())
+            if (profile.isPresent()) {
                 return new ResolvedPlayer(profile.get().getId(), profile.get().getName());
+            }
         }
 
         return null;
@@ -229,6 +237,7 @@ public final class AdminNotesEvents {
             Path worldDir = net.neoforged.neoforge.server.ServerLifecycleHooks.getCurrentServer()
                     .getWorldPath(LevelResource.ROOT);
             dataFile = worldDir.resolve("admin_notes.json");
+
             if (Files.notExists(dataFile)) {
                 saveData();
                 return;
@@ -236,9 +245,11 @@ public final class AdminNotesEvents {
 
             String json = Files.readString(dataFile, StandardCharsets.UTF_8);
             Storage storage = GSON.fromJson(json, Storage.class);
+
             PLAYERS.clear();
-            if (storage != null && storage.players != null)
+            if (storage != null && storage.players != null) {
                 PLAYERS.putAll(storage.players);
+            }
         } catch (Exception e) {
             LOGGER.error("Failed to load admin notes.", e);
         }
@@ -266,6 +277,7 @@ public final class AdminNotesEvents {
 
     private static String formatDate(long timestamp) {
         if (timestamp <= 0) return "Unknown";
+
         try {
             return java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
                     .withZone(java.time.ZoneId.systemDefault())
