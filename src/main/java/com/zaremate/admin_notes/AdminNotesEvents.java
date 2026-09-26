@@ -6,6 +6,9 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.mojang.brigadier.arguments.StringArgumentType;
+import com.mojang.brigadier.context.CommandContext;
+import com.mojang.brigadier.suggestion.Suggestions;
+import com.mojang.brigadier.suggestion.SuggestionsBuilder;
 import com.mojang.logging.LogUtils;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
@@ -24,9 +27,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 
 public final class AdminNotesEvents {
     private static final Logger LOGGER = LogUtils.getLogger();
@@ -44,6 +50,7 @@ public final class AdminNotesEvents {
                 .then(Commands.literal("add")
                         .requires(source -> hasPermission(source, AdminNotesConfig.ADD_PERMISSION.get()))
                         .then(Commands.argument("player", StringArgumentType.word())
+                                .suggests(AdminNotesEvents::suggestPlayers)
                                 .then(Commands.argument("text", StringArgumentType.greedyString())
                                         .executes(ctx -> addNote(
                                                 ctx.getSource(),
@@ -53,6 +60,7 @@ public final class AdminNotesEvents {
                 .then(Commands.literal("rm")
                         .requires(source -> hasPermission(source, AdminNotesConfig.REMOVE_PERMISSION.get()))
                         .then(Commands.argument("player", StringArgumentType.word())
+                                .suggests(AdminNotesEvents::suggestPlayers)
                                 .then(Commands.argument("noteId", UuidArgument.uuid())
                                         .executes(ctx -> removeNote(
                                                 ctx.getSource(),
@@ -70,12 +78,47 @@ public final class AdminNotesEvents {
                                         ctx.getSource(),
                                         StringArgumentType.getString(ctx, "player")))))
                 .then(Commands.argument("player", StringArgumentType.word())
+                        .suggests(AdminNotesEvents::suggestPlayers)
                         .requires(source -> hasPermission(source, AdminNotesConfig.READ_PERMISSION.get()))
                         .executes(ctx -> showNotes(
                                 ctx.getSource(),
                                 StringArgumentType.getString(ctx, "player"))));
 
         event.getDispatcher().register(root);
+    }
+
+    private static CompletableFuture<Suggestions> suggestPlayers(
+            CommandContext<CommandSourceStack> context,
+            SuggestionsBuilder builder
+    ) {
+        String remaining = builder.getRemaining().toLowerCase();
+        Set<String> names = new HashSet<>();
+
+        var server = context.getSource().getServer();
+        if (server == null) {
+            return builder.buildFuture();
+        }
+
+        // Online players are always available for autocomplete.
+        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+            names.add(player.getGameProfile().getName());
+        }
+
+        // Previously known players are suggested too, including offline players.
+        synchronized (DATA_LOCK) {
+            for (PlayerNotes player : PLAYERS.values()) {
+                if (player != null && player.name != null && !player.name.isBlank()) {
+                    names.add(player.name);
+                }
+            }
+        }
+
+        names.stream()
+                .filter(name -> name.toLowerCase().startsWith(remaining))
+                .sorted(String.CASE_INSENSITIVE_ORDER)
+                .forEach(builder::suggest);
+
+        return builder.buildFuture();
     }
 
     private static boolean hasPermission(CommandSourceStack source, String permission) {
