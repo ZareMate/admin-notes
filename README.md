@@ -5,12 +5,13 @@ NeoForge 1.21.1 server-side admin notes with LuckPerms permissions.
 ## Commands
 
 `/note <player>` — read all notes for a player.  
+`/note <noteId>` — find a specific note by its UUID (requires `admin_notes.read`).  
 `/note add <player> <note>` — add a new note as the executing admin.  
 `/note rm <player>` — remove the latest note created by you for the player.  
 `/note rm <player> <noteId>` — remove a specific note by its ID.  
 `/note clear <player>` — remove all notes.
 
-Each note now has its own UUID, so multiple notes can be created by the same author.
+Each note now has its own UUID, so multiple notes can be created by the same author. Note IDs shown by `/note <player>` are clickable and copy the UUID to the clipboard.
 
 Player arguments have autocomplete for currently online players and previously stored players. Autocomplete does not restrict input, so an offline player can still be entered manually even if their name is not in the suggestions.
 
