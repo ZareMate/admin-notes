@@ -13,7 +13,9 @@ import com.mojang.logging.LogUtils;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.arguments.UuidArgument;
+import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.storage.LevelResource;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -79,12 +81,11 @@ public final class AdminNotesEvents {
                                 .executes(ctx -> clearNotes(
                                         ctx.getSource(),
                                         StringArgumentType.getString(ctx, "player")))))
-                .then(Commands.argument("player", StringArgumentType.word())
-                        .suggests(AdminNotesEvents::suggestPlayers)
+                .then(Commands.argument("playerOrId", StringArgumentType.word())
                         .requires(source -> hasPermission(source, AdminNotesConfig.READ_PERMISSION.get()))
-                        .executes(ctx -> showNotes(
+                        .executes(ctx -> showNotesOrSearch(
                                 ctx.getSource(),
-                                StringArgumentType.getString(ctx, "player"))));
+                                StringArgumentType.getString(ctx, "playerOrId"))));
 
         event.getDispatcher().register(root);
     }
@@ -237,6 +238,14 @@ public final class AdminNotesEvents {
         return 1;
     }
 
+    private static int showNotesOrSearch(CommandSourceStack source, String target) {
+        UUID noteId = parseUuid(target);
+        if (noteId != null) {
+            return showNoteById(source, noteId);
+        }
+        return showNotes(source, target);
+    }
+
     private static int showNotes(CommandSourceStack source, String targetName) {
         ResolvedPlayer target = resolvePlayer(source, targetName);
         if (target == null) {
@@ -275,9 +284,7 @@ public final class AdminNotesEvents {
                         formatDate(note.createdAt())
                 ).withStyle(s -> s.withColor(0x555555)), false);
 
-                source.sendSuccess(() -> Component.literal(
-                        "ID: " + note.id()
-                ).withStyle(s -> s.withColor(0x777777)), false);
+                source.sendSuccess(() -> clickableNoteId(note.id()), false);
 
                 source.sendSuccess(() -> Component.literal(""), false);
             }
@@ -288,6 +295,68 @@ public final class AdminNotesEvents {
         ).withColor(0x555555), false);
 
         return 1;
+    }
+
+    private static int showNoteById(CommandSourceStack source, UUID noteId) {
+        synchronized (DATA_LOCK) {
+            for (Map.Entry<String, PlayerNotes> entry : PLAYERS.entrySet()) {
+                PlayerNotes player = entry.getValue();
+                if (player == null || player.notes == null) continue;
+
+                for (AdminNotesAPI.Note note : player.notes) {
+                    if (!note.id().equals(noteId)) continue;
+
+                    String playerName = player.name == null || player.name.isBlank()
+                            ? entry.getKey()
+                            : player.name;
+                    String author = note.isSystem() ? "SYSTEM" : note.author();
+
+                    source.sendSuccess(() -> Component.literal(
+                            "───────────────────────────────────"
+                    ).withColor(0x555555), false);
+                    source.sendSuccess(() -> Component.literal(
+                            "NOTE FOUND"
+                    ).withStyle(s -> s.withColor(0xFFAA00).withBold(true)), false);
+                    source.sendSuccess(() -> Component.literal("Player: ")
+                            .append(Component.literal(playerName).withColor(0xFFFFFF)), false);
+                    source.sendSuccess(() -> Component.literal("Author: ")
+                            .append(Component.literal(author).withColor(0x55FFFF)), false);
+                    source.sendSuccess(() -> Component.literal("Text: ")
+                            .append(Component.literal(note.text()).withColor(0xFFFFFF)), false);
+                    source.sendSuccess(() -> Component.literal("Created: ")
+                            .append(Component.literal(formatDate(note.createdAt())).withColor(0x555555)), false);
+                    source.sendSuccess(() -> clickableNoteId(note.id()), false);
+                    source.sendSuccess(() -> Component.literal(
+                            "───────────────────────────────────"
+                    ).withColor(0x555555), false);
+                    return 1;
+                }
+            }
+        }
+
+        source.sendFailure(Component.literal("Note not found: " + noteId));
+        return 0;
+    }
+
+    private static UUID parseUuid(String value) {
+        try {
+            return UUID.fromString(value);
+        } catch (IllegalArgumentException ignored) {
+            return null;
+        }
+    }
+
+    private static Component clickableNoteId(UUID noteId) {
+        String id = noteId.toString();
+        return Component.literal("ID: " + id)
+                .withStyle(style -> style
+                        .withColor(0x777777)
+                        .withUnderlined(true)
+                        .withClickEvent(new ClickEvent(ClickEvent.Action.COPY_TO_CLIPBOARD, id))
+                        .withHoverEvent(new HoverEvent(
+                                HoverEvent.Action.SHOW_TEXT,
+                                Component.literal("Click to copy note ID")
+                        )));
     }
 
     static PlayerNotes getOrCreate(UUID uuid, String name) {
