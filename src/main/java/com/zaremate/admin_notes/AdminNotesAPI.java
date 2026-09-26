@@ -2,89 +2,82 @@ package com.zaremate.admin_notes;
 
 import net.neoforged.neoforge.server.ServerLifecycleHooks;
 
-import java.util.LinkedHashMap;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Public API for interacting with Admin Notes from other mods.
+ * Public API for interacting with Admin Notes from other server-side mods.
  *
- * <p>The API stores one note per author for each player, matching the
- * {@code /note add} command behaviour: adding a note from the same author
- * replaces that author's existing note.</p>
+ * <p>Each note has its own UUID, so a player can have any number of notes
+ * from the same author or from the system.</p>
  *
- * <p>Calls are thread-safe. Persistence is handled automatically.</p>
+ * <p>System notes have a {@code null} author UUID and author name.</p>
+ *
+ * <p>API operations are thread-safe and changes are persisted automatically.</p>
  */
 public final class AdminNotesAPI {
     private AdminNotesAPI() {}
 
     /**
-     * Returns all notes for a player.
-     *
-     * @param playerUuid UUID of the player whose notes should be read
-     * @return immutable snapshot of the player's notes; empty when the player has no notes
+     * Returns an immutable snapshot of all notes belonging to a player.
      */
-    public static Map<UUID, Note> getNotes(UUID playerUuid) {
+    public static List<Note> getNotes(UUID playerUuid) {
         Objects.requireNonNull(playerUuid, "playerUuid");
         ensureLoaded();
 
         synchronized (AdminNotesEvents.DATA_LOCK) {
-            AdminNotesEvents.PlayerNotes player = AdminNotesEvents.PLAYERS.get(playerUuid.toString());
+            AdminNotesEvents.PlayerNotes player =
+                    AdminNotesEvents.PLAYERS.get(playerUuid.toString());
+
             if (player == null || player.notes == null || player.notes.isEmpty()) {
-                return Map.of();
+                return List.of();
             }
 
-            Map<UUID, Note> result = new LinkedHashMap<>();
-            for (Map.Entry<String, Note> entry : player.notes.entrySet()) {
-                try {
-                    result.put(UUID.fromString(entry.getKey()), entry.getValue());
-                } catch (IllegalArgumentException ignored) {
-                    // Ignore malformed author UUIDs rather than breaking API reads.
-                }
-            }
-
-            return Map.copyOf(result);
+            return List.copyOf(player.notes);
         }
     }
 
     /**
-     * Returns the note created by a specific author for a player.
-     *
-     * @param playerUuid target player's UUID
-     * @param authorUuid author's UUID
-     * @return the note when present
+     * Returns one note by its unique note ID.
      */
-    public static Optional<Note> getNote(UUID playerUuid, UUID authorUuid) {
+    public static Optional<Note> getNote(UUID playerUuid, UUID noteId) {
         Objects.requireNonNull(playerUuid, "playerUuid");
-        Objects.requireNonNull(authorUuid, "authorUuid");
+        Objects.requireNonNull(noteId, "noteId");
         ensureLoaded();
 
         synchronized (AdminNotesEvents.DATA_LOCK) {
-            AdminNotesEvents.PlayerNotes player = AdminNotesEvents.PLAYERS.get(playerUuid.toString());
+            AdminNotesEvents.PlayerNotes player =
+                    AdminNotesEvents.PLAYERS.get(playerUuid.toString());
+
             if (player == null || player.notes == null) {
                 return Optional.empty();
             }
 
-            return Optional.ofNullable(player.notes.get(authorUuid.toString()));
+            for (Note note : player.notes) {
+                if (note.id().equals(noteId)) {
+                    return Optional.of(note);
+                }
+            }
+
+            return Optional.empty();
         }
     }
 
     /**
-     * Adds a note for a player.
+     * Adds a normal admin/mod-authored note.
      *
-     * <p>If the same author already has a note for the player, that note is
-     * replaced. The timestamp is updated.</p>
-     *
-     * @param playerUuid target player's UUID
-     * @param authorUuid author's UUID
-     * @param authorName name stored with the note
-     * @param text note text
-     * @return the stored note
+     * <p>Unlike the old API, adding another note from the same author does not
+     * replace an existing note.</p>
      */
-    public static Note addNote(UUID playerUuid, UUID authorUuid, String authorName, String text) {
+    public static Note addNote(
+            UUID playerUuid,
+            UUID authorUuid,
+            String authorName,
+            String text
+    ) {
         Objects.requireNonNull(playerUuid, "playerUuid");
         Objects.requireNonNull(authorUuid, "authorUuid");
         Objects.requireNonNull(authorName, "authorName");
@@ -92,104 +85,155 @@ public final class AdminNotesAPI {
 
         ensureLoaded();
 
-        String noteText = text.trim();
-        if (noteText.isEmpty()) {
-            throw new IllegalArgumentException("Note text cannot be empty.");
-        }
+        String trimmedName = authorName.trim();
+        String trimmedText = text.trim();
 
-        String name = authorName.trim();
-        if (name.isEmpty()) {
+        if (trimmedName.isEmpty()) {
             throw new IllegalArgumentException("Author name cannot be empty.");
         }
+
+        validateText(trimmedText);
+
+        Note note = new Note(
+                UUID.randomUUID(),
+                authorUuid,
+                trimmedName,
+                trimmedText,
+                System.currentTimeMillis()
+        );
 
         synchronized (AdminNotesEvents.DATA_LOCK) {
             AdminNotesEvents.PlayerNotes player =
                     AdminNotesEvents.getOrCreate(playerUuid, resolvePlayerName(playerUuid));
 
-            Note note = new Note(name, noteText, System.currentTimeMillis());
-            player.notes.put(authorUuid.toString(), note);
+            player.notes.add(note);
             AdminNotesEvents.saveData();
-            return note;
         }
+
+        return note;
     }
 
     /**
-     * Edits the existing note belonging to an author.
+     * Adds an automatically generated system note.
      *
-     * @param playerUuid target player's UUID
-     * @param authorUuid author's UUID
-     * @param text new note text
-     * @return the updated note
-     * @throws IllegalStateException when the author has no note for the player
+     * <p>System notes have no author UUID and no author name.</p>
      */
-    public static Note editNote(UUID playerUuid, UUID authorUuid, String text) {
+    public static Note addSystemNote(UUID playerUuid, String text) {
         Objects.requireNonNull(playerUuid, "playerUuid");
-        Objects.requireNonNull(authorUuid, "authorUuid");
         Objects.requireNonNull(text, "text");
 
         ensureLoaded();
 
-        String noteText = text.trim();
-        if (noteText.isEmpty()) {
-            throw new IllegalArgumentException("Note text cannot be empty.");
-        }
+        String trimmedText = text.trim();
+        validateText(trimmedText);
+
+        Note note = new Note(
+                UUID.randomUUID(),
+                null,
+                null,
+                trimmedText,
+                System.currentTimeMillis()
+        );
 
         synchronized (AdminNotesEvents.DATA_LOCK) {
-            AdminNotesEvents.PlayerNotes player = AdminNotesEvents.PLAYERS.get(playerUuid.toString());
-            if (player == null || player.notes == null) {
-                throw new IllegalStateException("No note exists for this author and player.");
-            }
+            AdminNotesEvents.PlayerNotes player =
+                    AdminNotesEvents.getOrCreate(playerUuid, resolvePlayerName(playerUuid));
 
-            String authorKey = authorUuid.toString();
-            Note existing = player.notes.get(authorKey);
-            if (existing == null) {
-                throw new IllegalStateException("No note exists for this author and player.");
-            }
-
-            Note updated = new Note(existing.author(), noteText, existing.createdAt());
-            player.notes.put(authorKey, updated);
+            player.notes.add(note);
             AdminNotesEvents.saveData();
-            return updated;
         }
+
+        return note;
     }
 
     /**
-     * Removes the note belonging to an author.
+     * Edits an existing note by note ID.
      *
-     * @return {@code true} when a note was removed
+     * <p>The original author and creation timestamp are preserved.</p>
      */
-    public static boolean removeNote(UUID playerUuid, UUID authorUuid) {
+    public static Note editNote(UUID playerUuid, UUID noteId, String text) {
         Objects.requireNonNull(playerUuid, "playerUuid");
-        Objects.requireNonNull(authorUuid, "authorUuid");
+        Objects.requireNonNull(noteId, "noteId");
+        Objects.requireNonNull(text, "text");
+
+        ensureLoaded();
+
+        String trimmedText = text.trim();
+        validateText(trimmedText);
+
+        synchronized (AdminNotesEvents.DATA_LOCK) {
+            AdminNotesEvents.PlayerNotes player =
+                    AdminNotesEvents.PLAYERS.get(playerUuid.toString());
+
+            if (player == null || player.notes == null) {
+                throw new IllegalStateException("No notes found for this player.");
+            }
+
+            for (int i = 0; i < player.notes.size(); i++) {
+                Note existing = player.notes.get(i);
+
+                if (!existing.id().equals(noteId)) {
+                    continue;
+                }
+
+                Note updated = new Note(
+                        existing.id(),
+                        existing.authorUuid(),
+                        existing.author(),
+                        trimmedText,
+                        existing.createdAt()
+                );
+
+                player.notes.set(i, updated);
+                AdminNotesEvents.saveData();
+                return updated;
+            }
+        }
+
+        throw new IllegalStateException("Note not found: " + noteId);
+    }
+
+    /**
+     * Removes one note by its unique note ID.
+     *
+     * @return true when a note was removed
+     */
+    public static boolean removeNote(UUID playerUuid, UUID noteId) {
+        Objects.requireNonNull(playerUuid, "playerUuid");
+        Objects.requireNonNull(noteId, "noteId");
         ensureLoaded();
 
         synchronized (AdminNotesEvents.DATA_LOCK) {
-            AdminNotesEvents.PlayerNotes player = AdminNotesEvents.PLAYERS.get(playerUuid.toString());
+            AdminNotesEvents.PlayerNotes player =
+                    AdminNotesEvents.PLAYERS.get(playerUuid.toString());
+
             if (player == null || player.notes == null) {
                 return false;
             }
 
-            Note removed = player.notes.remove(authorUuid.toString());
-            if (removed == null) {
-                return false;
+            boolean removed = player.notes.removeIf(note -> note.id().equals(noteId));
+
+            if (removed) {
+                AdminNotesEvents.saveData();
             }
 
-            AdminNotesEvents.saveData();
-            return true;
+            return removed;
         }
     }
 
     /**
      * Removes every note belonging to a player.
      *
-     * @return number of removed notes
+     * @return the number of removed notes
      */
     public static int clearNotes(UUID playerUuid) {
         Objects.requireNonNull(playerUuid, "playerUuid");
         ensureLoaded();
 
         synchronized (AdminNotesEvents.DATA_LOCK) {
-            AdminNotesEvents.PlayerNotes player = AdminNotesEvents.PLAYERS.get(playerUuid.toString());
+            AdminNotesEvents.PlayerNotes player =
+                    AdminNotesEvents.PLAYERS.get(playerUuid.toString());
+
             if (player == null || player.notes == null || player.notes.isEmpty()) {
                 return 0;
             }
@@ -209,11 +253,20 @@ public final class AdminNotesAPI {
         ensureLoaded();
 
         synchronized (AdminNotesEvents.DATA_LOCK) {
-            AdminNotesEvents.PlayerNotes player = AdminNotesEvents.PLAYERS.get(playerUuid.toString());
+            AdminNotesEvents.PlayerNotes player =
+                    AdminNotesEvents.PLAYERS.get(playerUuid.toString());
+
             if (player == null || player.name == null || player.name.isBlank()) {
                 return Optional.empty();
             }
+
             return Optional.of(player.name);
+        }
+    }
+
+    private static void validateText(String text) {
+        if (text.isEmpty()) {
+            throw new IllegalArgumentException("Note text cannot be empty.");
         }
     }
 
@@ -223,15 +276,23 @@ public final class AdminNotesAPI {
         }
 
         var server = ServerLifecycleHooks.getCurrentServer();
-        if (server != null) {
-            AdminNotesEvents.initializeData(server);
+        if (server == null) {
+            throw new IllegalStateException(
+                    "Admin Notes API is only available while the Minecraft server is running."
+            );
         }
+
+        AdminNotesEvents.initializeData(server);
     }
 
     private static String resolvePlayerName(UUID playerUuid) {
-        Optional<String> stored = getPlayerName(playerUuid);
-        if (stored.isPresent()) {
-            return stored.get();
+        synchronized (AdminNotesEvents.DATA_LOCK) {
+            AdminNotesEvents.PlayerNotes stored =
+                    AdminNotesEvents.PLAYERS.get(playerUuid.toString());
+
+            if (stored != null && stored.name != null && !stored.name.isBlank()) {
+                return stored.name;
+            }
         }
 
         var server = ServerLifecycleHooks.getCurrentServer();
@@ -246,11 +307,27 @@ public final class AdminNotesAPI {
     }
 
     /**
-     * Immutable note exposed to API consumers.
+     * Immutable representation of a stored note.
      *
-     * @param author author name stored with the note
+     * @param id unique note ID
+     * @param authorUuid UUID of the author, or {@code null} for a system note
+     * @param author author name, or {@code null} for a system note
      * @param text note text
      * @param createdAt creation timestamp in milliseconds since Unix epoch
      */
-    public record Note(String author, String text, long createdAt) {}
+    public record Note(
+            UUID id,
+            UUID authorUuid,
+            String author,
+            String text,
+            long createdAt
+    ) {
+        /**
+         * Returns whether this note was generated by the system rather than
+         * an individual author.
+         */
+        public boolean isSystem() {
+            return authorUuid == null;
+        }
+    }
 }
