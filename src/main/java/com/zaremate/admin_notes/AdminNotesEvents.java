@@ -122,6 +122,25 @@ public final class AdminNotesEvents {
                 .sorted(String.CASE_INSENSITIVE_ORDER)
                 .forEach(builder::suggest);
 
+        // Player UUIDs use the same UUID-prefix autocomplete behavior as note IDs.
+        boolean looksLikeUuidPrefix = remaining.matches("[0-9a-f]{1,8}(-[0-9a-f]{0,4})?");
+        if (looksLikeUuidPrefix) {
+            Set<String> playerUuids = new HashSet<>();
+
+            for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+                playerUuids.add(player.getUUID().toString());
+            }
+
+            synchronized (DATA_LOCK) {
+                playerUuids.addAll(PLAYERS.keySet());
+            }
+
+            playerUuids.stream()
+                    .filter(id -> id.toLowerCase(Locale.ROOT).startsWith(remaining))
+                    .sorted()
+                    .forEach(builder::suggest);
+        }
+
         return builder.buildFuture();
     }
 
@@ -159,9 +178,23 @@ public final class AdminNotesEvents {
                 .sorted(String.CASE_INSENSITIVE_ORDER)
                 .forEach(builder::suggest);
 
-        // UUIDs only appear after a UUID-looking prefix has been entered.
+        // Player UUIDs and note UUIDs appear after a UUID-looking prefix
+        // has been entered.
         if (looksLikeUuidPrefix) {
+            Set<String> playerUuids = new HashSet<>();
+
+            for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+                playerUuids.add(player.getUUID().toString());
+            }
+
             synchronized (DATA_LOCK) {
+                playerUuids.addAll(PLAYERS.keySet());
+
+                playerUuids.stream()
+                        .filter(id -> id.toLowerCase(Locale.ROOT).startsWith(remaining))
+                        .sorted()
+                        .forEach(builder::suggest);
+
                 PLAYERS.values().stream()
                         .filter(player -> player != null && player.notes != null)
                         .flatMap(player -> player.notes.stream())
