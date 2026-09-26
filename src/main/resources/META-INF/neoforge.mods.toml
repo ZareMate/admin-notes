@@ -8,3 +8,10 @@ version="${mod_version}"
 displayName="Admin Notes"
 authors="ZareMate"
 description='''Per-player notes for server administrators with LuckPerms support.'''
+
+[[dependencies.admin_notes]]
+modId="discordlink"
+type="optional"
+versionRange="[1,)"
+ordering="AFTER"
+side="SERVER"
