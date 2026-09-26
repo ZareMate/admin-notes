@@ -5,9 +5,12 @@ NeoForge 1.21.1 server-side admin notes with LuckPerms permissions.
 ## Commands
 
 `/note <player>` — read all notes for a player.  
-`/note add <player> <note>` — add or replace your own note.  
-`/note rm <player>` — remove your own note.  
+`/note add <player> <note>` — add a new note as the executing admin.  
+`/note rm <player>` — remove the latest note created by you for the player.  
+`/note rm <player> <noteId>` — remove a specific note by its ID.  
 `/note clear <player>` — remove all notes.
+
+Each note now has its own UUID, so multiple notes can be created by the same author.
 
 ## Permissions
 
@@ -18,32 +21,67 @@ NeoForge 1.21.1 server-side admin notes with LuckPerms permissions.
 
 Operator level 3+ also has access.
 
-Notes are stored per UUID in `admin_notes.json` inside the world directory.
+Notes are stored per player UUID in `admin_notes.json` inside the world directory.
 
 ## Mod API
 
 Other server-side mods can use the public `com.zaremate.admin_notes.AdminNotesAPI` class to read and manage notes directly.
 
-The API uses player UUIDs and stores one note per author for each player. Calling `addNote` for an author who already has a note replaces that note.
+The API is built around **unique note IDs**. A player can have any number of notes from the same author.
 
-### Read notes
+### Note structure
+
+```java
+public record Note(
+    UUID id,
+    UUID authorUuid,
+    String author,
+    String text,
+    long createdAt
+) {
+    public boolean isSystem() {
+        return authorUuid == null;
+    }
+}
+```
+
+For a system-generated note:
+
+```java
+note.authorUuid() == null
+note.author() == null
+note.isSystem() == true
+```
+
+### Read all notes
 
 ```java
 UUID playerUuid = ...;
 
-Map<UUID, AdminNotesAPI.Note> notes = AdminNotesAPI.getNotes(playerUuid);
+List<AdminNotesAPI.Note> notes =
+        AdminNotesAPI.getNotes(playerUuid);
 
-for (Map.Entry<UUID, AdminNotesAPI.Note> entry : notes.entrySet()) {
-    UUID authorUuid = entry.getKey();
-    AdminNotesAPI.Note note = entry.getValue();
+for (AdminNotesAPI.Note note : notes) {
+    if (note.isSystem()) {
+        System.out.println("[SYSTEM] " + note.text());
+    } else {
+        System.out.println(
+                "[" + note.author() + "] " + note.text()
+        );
+    }
 
-    System.out.println(
-            note.author() + ": " + note.text()
-    );
+    System.out.println("Note ID: " + note.id());
 }
 ```
 
-### Add a note
+### Read one note
+
+```java
+Optional<AdminNotesAPI.Note> note =
+        AdminNotesAPI.getNote(playerUuid, noteId);
+```
+
+### Add a normal author note
 
 ```java
 AdminNotesAPI.Note note = AdminNotesAPI.addNote(
@@ -54,39 +92,64 @@ AdminNotesAPI.Note note = AdminNotesAPI.addNote(
 );
 ```
 
-### Read one author's note
+The note gets a new unique UUID every time, even when the same author adds multiple notes.
 
-```Optional<AdminNotesAPI.Note> note =
-        AdminNotesAPI.getNote(playerUuid, authorUuid);
+### Add an automatic system note
+
+System notes do not require an author UUID or author name:
+
+```java
+AdminNotesAPI.Note note =
+        AdminNotesAPI.addSystemNote(
+                playerUuid,
+                "Player triggered the anti-cheat."
+        );
+```
+
+This creates a note where:
+
+```java
+note.authorUuid() == null
+note.author() == null
+note.isSystem() == true
 ```
 
 ### Edit a note
 
-```AdminNotesAPI.Note updated =
+Edit by the note's unique ID:
+
+```java
+AdminNotesAPI.Note updated =
         AdminNotesAPI.editNote(
                 playerUuid,
-                authorUuid,
+                noteId,
                 "Updated note text."
         );
 ```
 
-`editNote` keeps the original creation timestamp.
+The original note ID, author and creation timestamp are preserved.
 
-### Remove a note
+### Remove one note
 
-```boolean removed =
-        AdminNotesAPI.removeNote(playerUuid, authorUuid);
+```java
+boolean removed =
+        AdminNotesAPI.removeNote(
+                playerUuid,
+                noteId
+        );
 ```
 
 ### Remove all notes
 
-```int removed =
+```java
+int removed =
         AdminNotesAPI.clearNotes(playerUuid);
 ```
 
-### Get the stored player name
+### Get stored player name
 
-```Optional<String> name =
+```java
+Optional<String> name =
         AdminNotesAPI.getPlayerName(playerUuid);
 ```
 
@@ -94,7 +157,13 @@ API calls are thread-safe and automatically persist changes to `admin_notes.json
 
 The API does not perform LuckPerms permission checks. Consuming mods are responsible for deciding which of their own actions are authorized.
 
-### Example dependency
+## Data migration
+
+The 2.0 API automatically migrates the previous Admin Notes format.
+
+Existing notes from the old format receive new note UUIDs while keeping their original author, text and creation timestamp. They remain usable after migration.
+
+## Example dependency
 
 A consuming mod should declare Admin Notes as a dependency and use:
 
@@ -102,4 +171,4 @@ A consuming mod should declare Admin Notes as a dependency and use:
 import com.zaremate.admin_notes.AdminNotesAPI;
 ```
 
-The API is intended for server-side use and is available after the Admin Notes mod has initialized its server data.
+The API is intended for server-side use and is available while the Minecraft server is running.
