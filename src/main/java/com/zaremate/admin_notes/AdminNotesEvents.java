@@ -25,9 +25,9 @@ import java.util.UUID;
 public final class AdminNotesEvents {
     private static final Logger LOGGER = LogUtils.getLogger();
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
-    private static final Object DATA_LOCK = new Object();
-    private static final Map<String, PlayerNotes> PLAYERS = new LinkedHashMap<>();
-    private static Path dataFile;
+    static final Object DATA_LOCK = new Object();
+    static final Map<String, PlayerNotes> PLAYERS = new LinkedHashMap<>();
+    static Path dataFile;
 
     private AdminNotesEvents() {}
 
@@ -192,7 +192,7 @@ public final class AdminNotesEvents {
         return 1;
     }
 
-    private static PlayerNotes getOrCreate(UUID uuid, String name) {
+    static PlayerNotes getOrCreate(UUID uuid, String name) {
         return PLAYERS.computeIfAbsent(uuid.toString(), ignored -> new PlayerNotes(name));
     }
 
@@ -255,7 +255,7 @@ public final class AdminNotesEvents {
         }
     }
 
-    private static void saveData() {
+    static void saveData() {
         if (dataFile == null) {
             var server = net.neoforged.neoforge.server.ServerLifecycleHooks.getCurrentServer();
             if (server == null) return;
@@ -292,21 +292,27 @@ public final class AdminNotesEvents {
         Map<String, PlayerNotes> players = new LinkedHashMap<>();
     }
 
-    private static final class PlayerNotes {
+    static final class PlayerNotes {
         String name;
-        Map<String, Note> notes = new LinkedHashMap<>();
+        Map<String, AdminNotesAPI.Note> notes = new LinkedHashMap<>();
 
         PlayerNotes(String name) {
             this.name = name;
         }
     }
-
-    private record Note(String author, String text, long createdAt) {}
     private record ResolvedPlayer(UUID uuid, String name) {}
+
+    static void initializeData(net.minecraft.server.MinecraftServer server) {
+        if (server == null) return;
+
+        synchronized (DATA_LOCK) {
+            dataFile = server.getWorldPath(LevelResource.ROOT).resolve("admin_notes.json");
+            loadData();
+        }
+    }
 
     @SubscribeEvent
     public static void onServerStarted(ServerStartedEvent event) {
-        dataFile = event.getServer().getWorldPath(LevelResource.ROOT).resolve("admin_notes.json");
-        loadData();
+        initializeData(event.getServer());
     }
 }
