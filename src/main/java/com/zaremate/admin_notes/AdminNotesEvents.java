@@ -89,6 +89,7 @@ public final class AdminNotesEvents {
                                 StringArgumentType.getString(ctx, "playerOrId"))));
 
         event.getDispatcher().register(root);
+    }
 
     private static int showNotesOrSearch(CommandSourceStack source, String target) {
         UUID noteId = parseUuid(target);
@@ -124,12 +125,17 @@ public final class AdminNotesEvents {
             ), false);
         } else {
             for (AdminNotesAPI.Note note : notes) {
-                String author = note.isSystem() ? "SYSTEM" : note.author();
+                boolean assNote = isAssCategoryNote(note);
+                String author = assNote
+                        ? "ASS"
+                        : note.isSystem() ? "SYSTEM" : note.author();
 
                 source.sendSuccess(() -> Component.literal(
                         "[" + author + "]"
                 ).withStyle(s -> s
-                        .withColor(note.isSystem() ? 0xFF5555 : 0x55FFFF)
+                        .withColor(assNote
+                                ? 0xFFAA00
+                                : note.isSystem() ? 0xFF5555 : 0x55FFFF)
                         .withBold(true)), false);
 
                 sendMultiline(source, note.text());
@@ -138,7 +144,9 @@ public final class AdminNotesEvents {
                         formatDate(note.createdAt())
                 ).withStyle(s -> s.withColor(0x555555)), false);
 
-                source.sendSuccess(() -> clickableNoteId(note.id()), false);
+                if (!assNote) {
+                    source.sendSuccess(() -> clickableNoteId(note.id()), false);
+                }
 
                 source.sendSuccess(() -> Component.literal(""), false);
             }
@@ -163,7 +171,10 @@ public final class AdminNotesEvents {
                     String playerName = player.name == null || player.name.isBlank()
                             ? entry.getKey()
                             : player.name;
-                    String author = note.isSystem() ? "SYSTEM" : note.author();
+                    boolean assNote = isAssCategoryNote(note);
+                    String author = assNote
+                            ? "ASS"
+                            : note.isSystem() ? "SYSTEM" : note.author();
 
                     source.sendSuccess(() -> Component.literal(
                             "───────────────────────────────────"
@@ -175,12 +186,16 @@ public final class AdminNotesEvents {
                             .append(Component.literal(playerName).withColor(0xFFFFFF)), false);
                     source.sendSuccess(() -> Component.literal("Author: ")
                             .append(Component.literal(author)
-                                    .withColor(note.isSystem() ? 0xFF5555 : 0x55FFFF)), false);
+                                    .withColor(assNote
+                                            ? 0xFFAA00
+                                            : note.isSystem() ? 0xFF5555 : 0x55FFFF)), false);
                     source.sendSuccess(() -> Component.literal("Text:"), false);
                     sendMultiline(source, note.text());
                     source.sendSuccess(() -> Component.literal("Created: ")
                             .append(Component.literal(formatDate(note.createdAt())).withColor(0x555555)), false);
-                    source.sendSuccess(() -> clickableNoteId(note.id()), false);
+                    if (!assNote) {
+                        source.sendSuccess(() -> clickableNoteId(note.id()), false);
+                    }
                     source.sendSuccess(() -> Component.literal(
                             "───────────────────────────────────"
                     ).withColor(0x555555), false);
@@ -191,6 +206,13 @@ public final class AdminNotesEvents {
 
         source.sendFailure(Component.literal("Note not found: " + noteId));
         return 0;
+    }
+
+    private static boolean isAssCategoryNote(AdminNotesAPI.Note note) {
+        return note != null
+                && note.isSystem()
+                && note.author() != null
+                && note.author().equalsIgnoreCase("ASS");
     }
 
     private static void sendMultiline(CommandSourceStack source, String text) {
