@@ -26,6 +26,9 @@ Operator level 3+ also has access.
 
 Notes are stored per player UUID in `admin_notes.json` inside the world directory.
 
+
+Airport Security System offense commands are implemented by the Airport Security System mod, not Admin Notes. Admin Notes only provides the generic note storage API used by integrations.
+
 ## Mod API
 
 Other server-side mods can use the public `com.zaremate.admin_notes.AdminNotesAPI` class to read and manage notes directly.
