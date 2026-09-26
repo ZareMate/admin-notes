@@ -2,10 +2,14 @@ package com.zaremate.admin_notes;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.logging.LogUtils;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
+import net.minecraft.commands.arguments.UuidArgument;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.storage.LevelResource;
@@ -18,7 +22,9 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -47,16 +53,26 @@ public final class AdminNotesEvents {
                 .then(Commands.literal("rm")
                         .requires(source -> hasPermission(source, AdminNotesConfig.REMOVE_PERMISSION.get()))
                         .then(Commands.argument("player", StringArgumentType.word())
-                                .executes(ctx -> removeNote(ctx.getSource(),
-                                        StringArgumentType.getString(ctx, "player")))))
+                                .then(Commands.argument("noteId", UuidArgument.uuid())
+                                        .executes(ctx -> removeNote(
+                                                ctx.getSource(),
+                                                StringArgumentType.getString(ctx, "player"),
+                                                UuidArgument.getUuid(ctx, "noteId")
+                                        )))
+                                .executes(ctx -> removeLatestOwnNote(
+                                        ctx.getSource(),
+                                        StringArgumentType.getString(ctx, "player")
+                                ))))
                 .then(Commands.literal("clear")
                         .requires(source -> hasPermission(source, AdminNotesConfig.CLEAR_PERMISSION.get()))
                         .then(Commands.argument("player", StringArgumentType.word())
-                                .executes(ctx -> clearNotes(ctx.getSource(),
+                                .executes(ctx -> clearNotes(
+                                        ctx.getSource(),
                                         StringArgumentType.getString(ctx, "player")))))
                 .then(Commands.argument("player", StringArgumentType.word())
                         .requires(source -> hasPermission(source, AdminNotesConfig.READ_PERMISSION.get()))
-                        .executes(ctx -> showNotes(ctx.getSource(),
+                        .executes(ctx -> showNotes(
+                                ctx.getSource(),
                                 StringArgumentType.getString(ctx, "player"))));
 
         event.getDispatcher().register(root);
@@ -88,22 +104,18 @@ public final class AdminNotesEvents {
             return 0;
         }
 
-        synchronized (DATA_LOCK) {
-            PlayerNotes player = getOrCreate(target.uuid(), target.name());
-            player.name = target.name();
-            player.notes.put(admin.getUUID().toString(), new AdminNotesAPI.Note(
-                    admin.getGameProfile().getName(),
-                    noteText,
-                    System.currentTimeMillis()
-            ));
-            saveData();
-        }
+        AdminNotesAPI.addNote(
+                target.uuid(),
+                admin.getUUID(),
+                admin.getGameProfile().getName(),
+                noteText
+        );
 
-        source.sendSuccess(() -> Component.literal("Note saved for " + target.name()), false);
+        source.sendSuccess(() -> Component.literal("Note added for " + target.name()), false);
         return 1;
     }
 
-    private static int removeNote(CommandSourceStack source, String targetName) {
+    private static int removeLatestOwnNote(CommandSourceStack source, String targetName) {
         if (!(source.getEntity() instanceof ServerPlayer admin)) return 0;
 
         ResolvedPlayer target = resolvePlayer(source, targetName);
@@ -114,20 +126,54 @@ public final class AdminNotesEvents {
 
         synchronized (DATA_LOCK) {
             PlayerNotes notes = PLAYERS.get(target.uuid().toString());
-            if (notes == null || notes.notes == null) {
+
+            if (notes == null || notes.notes == null || notes.notes.isEmpty()) {
                 source.sendFailure(Component.literal("No notes found for " + target.name() + "."));
                 return 0;
             }
 
-            if (notes.notes.remove(admin.getUUID().toString()) == null) {
-                source.sendFailure(Component.literal("You do not have a note for " + notes.name + "."));
-                return 0;
-            }
+            for (int i = notes.notes.size() - 1; i >= 0; i--) {
+                AdminNotesAPI.Note note = notes.notes.get(i);
 
-            saveData();
+                if (!admin.getUUID().equals(note.authorUuid())) {
+                    continue;
+                }
+
+                notes.notes.remove(i);
+                saveData();
+
+                source.sendSuccess(() -> Component.literal(
+                        "Your latest note for " + target.name() + " was removed."
+                ), false);
+                return 1;
+            }
         }
 
-        source.sendSuccess(() -> Component.literal("Your note for " + target.name() + " was removed."), false);
+        source.sendFailure(Component.literal("You do not have any notes for " + target.name() + "."));
+        return 0;
+    }
+
+    private static int removeNote(
+            CommandSourceStack source,
+            String targetName,
+            UUID noteId
+    ) {
+        ResolvedPlayer target = resolvePlayer(source, targetName);
+        if (target == null) {
+            source.sendFailure(Component.literal("Player not found: " + targetName));
+            return 0;
+        }
+
+        boolean removed = AdminNotesAPI.removeNote(target.uuid(), noteId);
+
+        if (!removed) {
+            source.sendFailure(Component.literal("Note not found: " + noteId));
+            return 0;
+        }
+
+        source.sendSuccess(() -> Component.literal(
+                "Note removed from " + target.name()
+        ), false);
         return 1;
     }
 
@@ -138,20 +184,11 @@ public final class AdminNotesEvents {
             return 0;
         }
 
-        synchronized (DATA_LOCK) {
-            PlayerNotes notes = PLAYERS.get(target.uuid().toString());
-            if (notes == null || notes.notes == null) {
-                source.sendFailure(Component.literal("No notes found for " + target.name() + "."));
-                return 0;
-            }
+        int removed = AdminNotesAPI.clearNotes(target.uuid());
 
-            int removed = notes.notes.size();
-            notes.notes.clear();
-            saveData();
-
-            source.sendSuccess(() -> Component.literal(
-                    "Cleared " + removed + " note(s) for " + notes.name), false);
-        }
+        source.sendSuccess(() -> Component.literal(
+                "Cleared " + removed + " note(s) for " + target.name()
+        ), false);
         return 1;
     }
 
@@ -162,33 +199,49 @@ public final class AdminNotesEvents {
             return 0;
         }
 
-        PlayerNotes notes;
-        synchronized (DATA_LOCK) {
-            notes = PLAYERS.get(target.uuid().toString());
-            if (notes == null) {
-                source.sendFailure(Component.literal("No notes found for " + target.name() + "."));
-                return 0;
+        List<AdminNotesAPI.Note> notes = AdminNotesAPI.getNotes(target.uuid());
+
+        source.sendSuccess(() -> Component.literal(
+                "────────────────────────────────────"
+        ).withColor(0x555555), false);
+
+        source.sendSuccess(() -> Component.literal(
+                "PLAYER NOTES"
+        ).withStyle(s -> s.withColor(0xFFAA00).withBold(true)), false);
+
+        source.sendSuccess(() -> Component.literal("Player: ")
+                .append(Component.literal(target.name()).withColor(0xFFFFFF)), false);
+
+        if (notes.isEmpty()) {
+            source.sendSuccess(() -> Component.literal(
+                    "No notes have been added for this player."
+            ), false);
+        } else {
+            for (AdminNotesAPI.Note note : notes) {
+                String author = note.isSystem() ? "SYSTEM" : note.author();
+
+                source.sendSuccess(() -> Component.literal(
+                        "[" + author + "]"
+                ).withStyle(s -> s.withColor(0x55FFFF).withBold(true)), false);
+
+                source.sendSuccess(() -> Component.literal(note.text()), false);
+
+                source.sendSuccess(() -> Component.literal(
+                        formatDate(note.createdAt())
+                ).withStyle(s -> s.withColor(0x555555)), false);
+
+                source.sendSuccess(() -> Component.literal(
+                        "ID: " + note.id()
+                ).withStyle(s -> s.withColor(0x777777)), false);
+
+                source.sendSuccess(() -> Component.literal(""), false);
             }
         }
 
-        source.sendSuccess(() -> Component.literal("────────────────────────────────────").withColor(0x555555), false);
-        source.sendSuccess(() -> Component.literal("PLAYER NOTES").withStyle(s -> s.withColor(0xFFAA00).withBold(true)), false);
-        source.sendSuccess(() -> Component.literal("Player: ").append(Component.literal(notes.name).withColor(0xFFFFFF)), false);
+        source.sendSuccess(() -> Component.literal(
+                "────────────────────────────────────"
+        ).withColor(0x555555), false);
 
-        int count = 0;
-        for (AdminNotesAPI.Note note : notes.notes.values()) {
-            count++;
-            source.sendSuccess(() -> Component.literal("[" + note.author() + "]").withStyle(s -> s.withColor(0x55FFFF).withBold(true)), false);
-            source.sendSuccess(() -> Component.literal(note.text()), false);
-            source.sendSuccess(() -> Component.literal(formatDate(note.createdAt())).withStyle(s -> s.withColor(0x555555)), false);
-            source.sendSuccess(() -> Component.literal(""), false);
-        }
-
-        if (count == 0) {
-            source.sendSuccess(() -> Component.literal("No notes have been added for this player."), false);
-        }
-
-        source.sendSuccess(() -> Component.literal("────────────────────────────────────").withColor(0x555555), false);
         return 1;
     }
 
@@ -211,12 +264,23 @@ public final class AdminNotesEvents {
         synchronized (DATA_LOCK) {
             for (Map.Entry<String, PlayerNotes> entry : PLAYERS.entrySet()) {
                 PlayerNotes player = entry.getValue();
-                if (player == null || player.name == null || !player.name.equalsIgnoreCase(target)) continue;
+
+                if (player == null
+                        || player.name == null
+                        || !player.name.equalsIgnoreCase(target)) {
+                    continue;
+                }
 
                 try {
-                    return new ResolvedPlayer(UUID.fromString(entry.getKey()), player.name);
+                    return new ResolvedPlayer(
+                            UUID.fromString(entry.getKey()),
+                            player.name
+                    );
                 } catch (IllegalArgumentException ignored) {
-                    LOGGER.warn("Ignoring invalid player UUID '{}' in admin notes.", entry.getKey());
+                    LOGGER.warn(
+                            "Ignoring invalid player UUID '{}' in admin notes.",
+                            entry.getKey()
+                    );
                 }
             }
         }
@@ -224,8 +288,12 @@ public final class AdminNotesEvents {
         var cache = server.getProfileCache();
         if (cache != null) {
             var profile = cache.get(target);
+
             if (profile.isPresent()) {
-                return new ResolvedPlayer(profile.get().getId(), profile.get().getName());
+                return new ResolvedPlayer(
+                        profile.get().getId(),
+                        profile.get().getName()
+                );
             }
         }
 
@@ -234,42 +302,155 @@ public final class AdminNotesEvents {
 
     private static void loadData() {
         try {
-            Path worldDir = net.neoforged.neoforge.server.ServerLifecycleHooks.getCurrentServer()
-                    .getWorldPath(LevelResource.ROOT);
-            dataFile = worldDir.resolve("admin_notes.json");
+            var server = net.neoforged.neoforge.server.ServerLifecycleHooks.getCurrentServer();
+            if (server == null) {
+                LOGGER.warn("Cannot load admin notes because the server is not available yet.");
+                return;
+            }
+
+            dataFile = server.getWorldPath(LevelResource.ROOT)
+                    .resolve("admin_notes.json");
 
             if (Files.notExists(dataFile)) {
+                PLAYERS.clear();
                 saveData();
                 return;
             }
 
             String json = Files.readString(dataFile, StandardCharsets.UTF_8);
-            Storage storage = GSON.fromJson(json, Storage.class);
+            JsonObject root = JsonParser.parseString(json).getAsJsonObject();
 
             PLAYERS.clear();
-            if (storage != null && storage.players != null) {
-                PLAYERS.putAll(storage.players);
+
+            JsonElement playersElement = root.get("players");
+            if (playersElement == null || !playersElement.isJsonObject()) {
+                LOGGER.warn("Admin notes file has no valid players object.");
+                return;
             }
+
+            for (Map.Entry<String, JsonElement> entry :
+                    playersElement.getAsJsonObject().entrySet()) {
+
+                PlayerNotes player = parsePlayerNotes(entry.getKey(), entry.getValue());
+                if (player != null) {
+                    PLAYERS.put(entry.getKey(), player);
+                }
+            }
+
+            saveData();
         } catch (Exception e) {
             LOGGER.error("Failed to load admin notes.", e);
         }
+    }
+
+    private static PlayerNotes parsePlayerNotes(String playerUuid, JsonElement element) {
+        if (!element.isJsonObject()) {
+            return null;
+        }
+
+        JsonObject object = element.getAsJsonObject();
+
+        String name = "";
+        JsonElement nameElement = object.get("name");
+
+        if (nameElement != null && nameElement.isJsonPrimitive()) {
+            name = nameElement.getAsString();
+        }
+
+        PlayerNotes player = new PlayerNotes(name);
+        JsonElement notesElement = object.get("notes");
+
+        if (notesElement == null || notesElement.isJsonNull()) {
+            return player;
+        }
+
+        if (notesElement.isJsonArray()) {
+            for (JsonElement noteElement : notesElement.getAsJsonArray()) {
+                try {
+                    AdminNotesAPI.Note note =
+                            GSON.fromJson(noteElement, AdminNotesAPI.Note.class);
+
+                    if (isValidNote(note)) {
+                        player.notes.add(note);
+                    }
+                } catch (Exception exception) {
+                    LOGGER.warn(
+                            "Skipping malformed note for player '{}'.",
+                            playerUuid,
+                            exception
+                    );
+                }
+            }
+
+            return player;
+        }
+
+        if (notesElement.isJsonObject()) {
+            // Legacy schema:
+            // notes = { "<author UUID>": { "author", "text", "createdAt" } }
+            for (Map.Entry<String, JsonElement> noteEntry :
+                    notesElement.getAsJsonObject().entrySet()) {
+
+                try {
+                    UUID authorUuid = UUID.fromString(noteEntry.getKey());
+                    LegacyNote legacy =
+                            GSON.fromJson(noteEntry.getValue(), LegacyNote.class);
+
+                    if (legacy == null || legacy.text == null || legacy.text.isBlank()) {
+                        continue;
+                    }
+
+                    player.notes.add(new AdminNotesAPI.Note(
+                            UUID.randomUUID(),
+                            authorUuid,
+                            legacy.author,
+                            legacy.text,
+                            legacy.createdAt
+                    ));
+                } catch (Exception exception) {
+                    LOGGER.warn(
+                            "Skipping malformed legacy note for player '{}'.",
+                            playerUuid,
+                            exception
+                    );
+                }
+            }
+        }
+
+        return player;
+    }
+
+    private static boolean isValidNote(AdminNotesAPI.Note note) {
+        return note != null
+                && note.id() != null
+                && note.text() != null
+                && !note.text().isBlank();
     }
 
     static void saveData() {
         if (dataFile == null) {
             var server = net.neoforged.neoforge.server.ServerLifecycleHooks.getCurrentServer();
             if (server == null) return;
-            dataFile = server.getWorldPath(LevelResource.ROOT).resolve("admin_notes.json");
+
+            dataFile = server.getWorldPath(LevelResource.ROOT)
+                    .resolve("admin_notes.json");
         }
 
         try {
             Storage storage = new Storage();
-            storage.version = 1;
+            storage.version = 2;
             storage.players.putAll(PLAYERS);
 
             Path parent = dataFile.getParent();
-            if (parent != null) Files.createDirectories(parent);
-            Files.writeString(dataFile, GSON.toJson(storage), StandardCharsets.UTF_8);
+            if (parent != null) {
+                Files.createDirectories(parent);
+            }
+
+            Files.writeString(
+                    dataFile,
+                    GSON.toJson(storage),
+                    StandardCharsets.UTF_8
+            );
         } catch (IOException e) {
             LOGGER.error("Failed to save admin notes.", e);
         }
@@ -279,7 +460,8 @@ public final class AdminNotesEvents {
         if (timestamp <= 0) return "Unknown";
 
         try {
-            return java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+            return java.time.format.DateTimeFormatter
+                    .ofPattern("yyyy-MM-dd HH:mm")
                     .withZone(java.time.ZoneId.systemDefault())
                     .format(java.time.Instant.ofEpochMilli(timestamp));
         } catch (Exception ignored) {
@@ -288,25 +470,33 @@ public final class AdminNotesEvents {
     }
 
     private static final class Storage {
-        int version = 1;
+        int version = 2;
         Map<String, PlayerNotes> players = new LinkedHashMap<>();
     }
 
     static final class PlayerNotes {
         String name;
-        Map<String, AdminNotesAPI.Note> notes = new LinkedHashMap<>();
+        List<AdminNotesAPI.Note> notes = new ArrayList<>();
 
         PlayerNotes(String name) {
             this.name = name;
         }
     }
+
+    private record LegacyNote(
+            String author,
+            String text,
+            long createdAt
+    ) {}
+
     private record ResolvedPlayer(UUID uuid, String name) {}
 
     static void initializeData(net.minecraft.server.MinecraftServer server) {
         if (server == null) return;
 
         synchronized (DATA_LOCK) {
-            dataFile = server.getWorldPath(LevelResource.ROOT).resolve("admin_notes.json");
+            dataFile = server.getWorldPath(LevelResource.ROOT)
+                    .resolve("admin_notes.json");
             loadData();
         }
     }
