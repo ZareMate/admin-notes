@@ -10,6 +10,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.storage.LevelResource;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
+import net.neoforged.neoforge.event.server.ServerStartedEvent;
 import org.slf4j.Logger;
 
 import java.io.IOException;
@@ -210,7 +211,7 @@ public final class AdminNotesEvents {
         synchronized (DATA_LOCK) {
             String lower = target.toLowerCase();
             for (Map.Entry<String, PlayerNotes> entry : PLAYERS.entrySet()) {
-                if (entry.getValue() != null && entry.getValue().name.equalsIgnoreCase(lower))
+                if (entry.getValue() != null && entry.getValue().name != null && entry.getValue().name.equalsIgnoreCase(target))
                     return new ResolvedPlayer(UUID.fromString(entry.getKey()), entry.getValue().name);
             }
         }
@@ -223,10 +224,6 @@ public final class AdminNotesEvents {
         }
 
         return null;
-    }
-
-    private static boolean hasAnyOnlineOrStored(String target) {
-        return findPlayerUuid(target) != null;
     }
 
     private static void loadData() {
@@ -297,12 +294,9 @@ public final class AdminNotesEvents {
     private record Note(String author, String text, long createdAt) {}
     private record ResolvedPlayer(UUID uuid, String name) {}
 
-    static {
-        // Data is loaded lazily once the server exists.
-    }
-
-    public static void ensureLoaded() {
-        if (dataFile == null)
-            loadData();
+    @SubscribeEvent
+    public static void onServerStarted(ServerStartedEvent event) {
+        dataFile = event.getServer().getWorldPath(LevelResource.ROOT).resolve("admin_notes.json");
+        loadData();
     }
 }
