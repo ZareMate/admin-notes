@@ -89,6 +89,7 @@ public final class AdminNotesEvents {
                                 StringArgumentType.getString(ctx, "playerOrId"))));
 
         event.getDispatcher().register(root);
+    }
 
     private static CompletableFuture<Suggestions> suggestPlayers(
             CommandContext<CommandSourceStack> context,
