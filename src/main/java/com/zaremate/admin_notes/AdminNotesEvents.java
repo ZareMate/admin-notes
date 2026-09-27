@@ -470,29 +470,25 @@ public final class AdminNotesEvents {
             return Component.literal("");
         }
 
-        int detectedSeparator = detection.indexOf("| DETECTED |");
-        if (detectedSeparator < 0) {
-            return Component.literal(detection);
+        String details = detection;
+
+        int detectedSeparator = details.indexOf("| DETECTED |");
+        if (detectedSeparator >= 0) {
+            details = details.substring(
+                    detectedSeparator + "| DETECTED |".length()
+            ).trim();
         }
 
-        String details = detection
-                .substring(detectedSeparator + "| DETECTED |".length())
-                .trim();
+        java.util.regex.Matcher matcher = java.util.regex.Pattern
+                .compile("^(?:MOD|RESOURCE_PACK)\\s+(.+?)\\s+\\[([0-9a-fA-F]{64})\\]$")
+                .matcher(details);
 
-        int firstSpace = details.indexOf(' ');
-        int hashStart = details.lastIndexOf('[');
-        int hashEnd = details.endsWith("]") ? details.length() - 1 : -1;
-
-        if (firstSpace < 0 || hashStart <= firstSpace || hashEnd <= hashStart + 1) {
+        if (!matcher.matches()) {
             return Component.literal(details);
         }
 
-        String name = details.substring(firstSpace + 1, hashStart).trim();
-        String hash = details.substring(hashStart + 1, hashEnd).trim();
-
-        if (!hash.matches("[0-9a-fA-F]{64}") || name.isEmpty()) {
-            return Component.literal(details);
-        }
+        String name = matcher.group(1).trim();
+        String hash = matcher.group(2);
 
         return Component.literal(name)
                 .withStyle(style -> style
