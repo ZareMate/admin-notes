@@ -362,13 +362,14 @@ public final class AdminNotesEvents {
                 .append(Component.literal(target.name()).withColor(0xFFFFFF)), false);
 
         boolean hasAssInfo = showAssInfo(source, target.uuid());
+        boolean hasTsaInfo = showTsaInfo(source, target.uuid());
         boolean hasDiscordLinkInfo = showDiscordLinkInfo(source, target.uuid());
 
         List<AdminNotesAPI.Note> visibleNotes = notes.stream()
                 .filter(note -> !isAssCategoryNote(note))
                 .toList();
 
-        if (visibleNotes.isEmpty() && !hasAssInfo && !hasDiscordLinkInfo) {
+        if (visibleNotes.isEmpty() && !hasAssInfo && !hasTsaInfo && !hasDiscordLinkInfo) {
             source.sendSuccess(() -> Component.literal(
                     "No notes have been added for this player."
             ), false);
@@ -460,6 +461,92 @@ public final class AdminNotesEvents {
             return false;
         } catch (Throwable ex) {
             LOGGER.debug("Failed to read Airport Security System API.", ex);
+            return false;
+        }
+    }
+
+    private static boolean showTsaInfo(CommandSourceStack source, UUID playerUuid) {
+        try {
+            Class<?> apiClass = Class.forName(
+                    "com.zaremate.tsa_anticheat.api.TsaAnticheatAPI"
+            );
+
+            var method = apiClass.getMethod(
+                    "getPlayer",
+                    UUID.class
+            );
+
+            Object optionalObject = method.invoke(null, playerUuid);
+            if (!(optionalObject instanceof java.util.Optional<?> optional)
+                    || optional.isEmpty()) {
+                return false;
+            }
+
+            Object record = optional.get();
+
+            long packetChecks = ((Number) record.getClass()
+                    .getMethod("packetChecks")
+                    .invoke(record)).longValue();
+
+            long packetPasses = ((Number) record.getClass()
+                    .getMethod("packetPasses")
+                    .invoke(record)).longValue();
+
+            long packetModified = ((Number) record.getClass()
+                    .getMethod("packetModified")
+                    .invoke(record)).longValue();
+
+            long packetTimeout = ((Number) record.getClass()
+                    .getMethod("packetTimeout")
+                    .invoke(record)).longValue();
+
+            String lastPacketStatus = (String) record.getClass()
+                    .getMethod("lastPacketStatus")
+                    .invoke(record);
+
+            String lastPacketDate = (String) record.getClass()
+                    .getMethod("lastPacketDate")
+                    .invoke(record);
+
+            @SuppressWarnings("unchecked")
+            List<String> detections = (List<String>) record.getClass()
+                    .getMethod("detections")
+                    .invoke(record);
+
+            source.sendSuccess(() -> Component.literal("[TSA]")
+                    .withStyle(style -> style
+                            .withColor(0xFFAA00)
+                            .withBold(true)), false);
+
+            if (packetChecks > 0) {
+                source.sendSuccess(() -> Component.literal(
+                        "Packet checks: " + packetChecks
+                                + " (PASS: " + packetPasses
+                                + ", MODIFIED: " + packetModified
+                                + ", TIMEOUT: " + packetTimeout + ")"
+                ), false);
+
+                if (lastPacketStatus != null && !lastPacketStatus.isBlank()) {
+                    String statusLine = lastPacketDate == null || lastPacketDate.isBlank()
+                            ? "last: " + lastPacketStatus
+                            : "last: " + lastPacketStatus + " (" + lastPacketDate + ")";
+
+                    source.sendSuccess(() -> Component.literal(statusLine), false);
+                }
+            }
+
+            if (detections != null && !detections.isEmpty()) {
+                for (String detection : detections) {
+                    source.sendSuccess(() -> Component.literal(detection), false);
+                }
+            }
+
+            source.sendSuccess(() -> Component.literal(""), false);
+            return true;
+        } catch (ClassNotFoundException ignored) {
+            return false;
+        } catch (Throwable ex) {
+            LOGGER.debug("Failed to read TSA Anticheat API.", ex);
             return false;
         }
     }
