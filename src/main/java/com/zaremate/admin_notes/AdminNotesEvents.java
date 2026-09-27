@@ -465,6 +465,49 @@ public final class AdminNotesEvents {
         }
     }
 
+    private static Component formatTsaDetection(String detection) {
+        if (detection == null || detection.isBlank()) {
+            return Component.literal("");
+        }
+
+        int detectedSeparator = detection.indexOf("| DETECTED |");
+        if (detectedSeparator < 0) {
+            return Component.literal(detection);
+        }
+
+        String details = detection
+                .substring(detectedSeparator + "| DETECTED |".length())
+                .trim();
+
+        int firstSpace = details.indexOf(' ');
+        int hashStart = details.lastIndexOf('[');
+        int hashEnd = details.endsWith("]") ? details.length() - 1 : -1;
+
+        if (firstSpace < 0 || hashStart <= firstSpace || hashEnd <= hashStart + 1) {
+            return Component.literal(details);
+        }
+
+        String name = details.substring(firstSpace + 1, hashStart).trim();
+        String hash = details.substring(hashStart + 1, hashEnd).trim();
+
+        if (!hash.matches("[0-9a-fA-F]{64}") || name.isEmpty()) {
+            return Component.literal(details);
+        }
+
+        return Component.literal(name)
+                .withStyle(style -> style
+                        .withColor(0xFFFFFF)
+                        .withUnderlined(true)
+                        .withClickEvent(new ClickEvent(
+                                ClickEvent.Action.COPY_TO_CLIPBOARD,
+                                hash
+                        ))
+                        .withHoverEvent(new HoverEvent(
+                                HoverEvent.Action.SHOW_TEXT,
+                                Component.literal("SHA-256: " + hash)
+                        )));
+    }
+
     private static Class<?> loadExternalClass(String className) throws ClassNotFoundException {
         ClassLoader contextLoader = Thread.currentThread().getContextClassLoader();
 
@@ -550,7 +593,9 @@ public final class AdminNotesEvents {
 
             if (detections != null && !detections.isEmpty()) {
                 for (String detection : detections) {
-                    source.sendSuccess(() -> Component.literal(detection), false);
+                    Component detectionComponent = formatTsaDetection(detection);
+
+                    source.sendSuccess(() -> detectionComponent, false);
                 }
             }
 
