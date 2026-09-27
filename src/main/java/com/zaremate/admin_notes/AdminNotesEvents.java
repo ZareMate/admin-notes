@@ -498,12 +498,11 @@ public final class AdminNotesEvents {
 
             int nameColor = type.equalsIgnoreCase("MOD")
                     ? 0x5555FF
-                    : 0xFFFFFF;
+                    : 0xFF5555;
 
             result.add(Component.literal(name)
                     .withStyle(style -> style
                             .withColor(nameColor)
-                            .withUnderlined(true)
                             .withClickEvent(new ClickEvent(
                                     ClickEvent.Action.COPY_TO_CLIPBOARD,
                                     hash
