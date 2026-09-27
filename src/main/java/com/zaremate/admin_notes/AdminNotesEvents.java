@@ -831,15 +831,16 @@ public final class AdminNotesEvents {
 
     private static Component copyableComponent(String text, String hoverText) {
         return Component.literal(text)
-                .withColor(0x777777)
-                .withClickEvent(new ClickEvent(
-                        ClickEvent.Action.COPY_TO_CLIPBOARD,
-                        text
-                ))
-                .withHoverEvent(new HoverEvent(
-                        HoverEvent.Action.SHOW_TEXT,
-                        Component.literal(hoverText)
-                ));
+                .withStyle(style -> style
+                        .withColor(0x777777)
+                        .withClickEvent(new ClickEvent(
+                                ClickEvent.Action.COPY_TO_CLIPBOARD,
+                                text
+                        ))
+                        .withHoverEvent(new HoverEvent(
+                                HoverEvent.Action.SHOW_TEXT,
+                                Component.literal(hoverText)
+                        )));
     }
 
     private static Component clickableNoteId(UUID noteId) {
