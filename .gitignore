@@ -2,6 +2,7 @@
 .gradle/
 gradle/
 build/
+bin/
 
 # NeoForge run data
 run/
