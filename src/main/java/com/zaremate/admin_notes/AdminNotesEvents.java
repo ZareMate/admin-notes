@@ -465,9 +465,22 @@ public final class AdminNotesEvents {
         }
     }
 
+    private static Class<?> loadExternalClass(String className) throws ClassNotFoundException {
+        ClassLoader contextLoader = Thread.currentThread().getContextClassLoader();
+
+        if (contextLoader != null) {
+            try {
+                return Class.forName(className, true, contextLoader);
+            } catch (ClassNotFoundException ignored) {
+            }
+        }
+
+        return Class.forName(className, true, AdminNotesEvents.class.getClassLoader());
+    }
+
     private static boolean showTsaInfo(CommandSourceStack source, UUID playerUuid) {
         try {
-            Class<?> apiClass = Class.forName(
+            Class<?> apiClass = loadExternalClass(
                     "com.zaremate.tsa_anticheat.api.TsaAnticheatAPI"
             );
 
@@ -485,32 +498,32 @@ public final class AdminNotesEvents {
             Object record = optional.get();
 
             long packetChecks = ((Number) record.getClass()
-                    .getMethod("packetChecks")
+                    .getDeclaredMethod("packetChecks")
                     .invoke(record)).longValue();
 
             long packetPasses = ((Number) record.getClass()
-                    .getMethod("packetPasses")
+                    .getDeclaredMethod("packetPasses")
                     .invoke(record)).longValue();
 
             long packetModified = ((Number) record.getClass()
-                    .getMethod("packetModified")
+                    .getDeclaredMethod("packetModified")
                     .invoke(record)).longValue();
 
             long packetTimeout = ((Number) record.getClass()
-                    .getMethod("packetTimeout")
+                    .getDeclaredMethod("packetTimeout")
                     .invoke(record)).longValue();
 
             String lastPacketStatus = (String) record.getClass()
-                    .getMethod("lastPacketStatus")
+                    .getDeclaredMethod("lastPacketStatus")
                     .invoke(record);
 
             String lastPacketDate = (String) record.getClass()
-                    .getMethod("lastPacketDate")
+                    .getDeclaredMethod("lastPacketDate")
                     .invoke(record);
 
             @SuppressWarnings("unchecked")
             List<String> detections = (List<String>) record.getClass()
-                    .getMethod("detections")
+                    .getDeclaredMethod("detections")
                     .invoke(record);
 
             source.sendSuccess(() -> Component.literal("[TSA]")
@@ -546,7 +559,7 @@ public final class AdminNotesEvents {
         } catch (ClassNotFoundException ignored) {
             return false;
         } catch (Throwable ex) {
-            LOGGER.debug("Failed to read TSA Anticheat API.", ex);
+            LOGGER.warn("Failed to read TSA Anticheat API for player {}.", playerUuid, ex);
             return false;
         }
     }
