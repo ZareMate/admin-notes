@@ -486,16 +486,23 @@ public final class AdminNotesEvents {
         List<Component> result = new ArrayList<>();
 
         while (matcher.find()) {
-            String name = matcher.group(2).trim();
+            String type = matcher.group(1);
+            String name = matcher.group(2)
+                    .trim()
+                    .replace('_', ' ');
             String hash = matcher.group(3);
 
             if (name.isEmpty()) {
                 continue;
             }
 
+            int nameColor = type.equalsIgnoreCase("MOD")
+                    ? 0x5555FF
+                    : 0xFFFFFF;
+
             result.add(Component.literal(name)
                     .withStyle(style -> style
-                            .withColor(0xFFFFFF)
+                            .withColor(nameColor)
                             .withUnderlined(true)
                             .withClickEvent(new ClickEvent(
                                     ClickEvent.Action.COPY_TO_CLIPBOARD,
