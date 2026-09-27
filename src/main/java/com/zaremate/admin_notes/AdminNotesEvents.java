@@ -667,14 +667,24 @@ public final class AdminNotesEvents {
                     ? discordTag
                     : discordId;
 
-            source.sendSuccess(() -> Component.literal(
-                    "linked: " + display
-            ), false);
+            if (display != null && !display.isBlank()) {
+                Component linkedComponent = Component.literal("linked: ")
+                        .append(copyableComponent(
+                                display,
+                                "Click to copy Discord username"
+                        ));
+
+                source.sendSuccess(() -> linkedComponent, false);
+            }
 
             if (discordId != null && !discordId.isBlank()) {
-                source.sendSuccess(() -> Component.literal(
-                        "Discord ID: " + discordId
-                ).withColor(0x777777), false);
+                Component idComponent = Component.literal("Discord ID: ")
+                        .append(copyableComponent(
+                                discordId,
+                                "Click to copy Discord ID"
+                        ));
+
+                source.sendSuccess(() -> idComponent, false);
             }
 
             source.sendSuccess(() -> Component.literal(""), false);
@@ -817,6 +827,19 @@ public final class AdminNotesEvents {
         } catch (IllegalArgumentException ignored) {
             return null;
         }
+    }
+
+    private static Component copyableComponent(String text, String hoverText) {
+        return Component.literal(text)
+                .withColor(0x777777)
+                .withClickEvent(new ClickEvent(
+                        ClickEvent.Action.COPY_TO_CLIPBOARD,
+                        text
+                ))
+                .withHoverEvent(new HoverEvent(
+                        HoverEvent.Action.SHOW_TEXT,
+                        Component.literal(hoverText)
+                ));
     }
 
     private static Component clickableNoteId(UUID noteId) {
