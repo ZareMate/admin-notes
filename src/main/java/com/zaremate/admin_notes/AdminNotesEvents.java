@@ -465,7 +465,7 @@ public final class AdminNotesEvents {
         }
     }
 
-    private static List<Component> formatTsaDetections(String detection) {
+    private static List<TsaDetectionDisplay> parseTsaDetections(String detection) {
         if (detection == null || detection.isBlank()) {
             return List.of();
         }
@@ -483,14 +483,13 @@ public final class AdminNotesEvents {
                 .compile("(?:^|,\\s*)(MOD|RESOURCE_PACK)\\s+(.+?)\\s+\\[([0-9a-fA-F]{64})\\]")
                 .matcher(details);
 
-        List<Component> result = new ArrayList<>();
+        List<TsaDetectionDisplay> result = new ArrayList<>();
 
         while (matcher.find()) {
             String type = matcher.group(1);
             String name = matcher.group(2)
                     .trim()
                     .replaceAll("§.", "")
-                    .replace('§', ' ')
                     .replace('_', ' ');
             String hash = matcher.group(3);
 
@@ -502,7 +501,7 @@ public final class AdminNotesEvents {
                     ? 0x5555FF
                     : 0xFF5555;
 
-            result.add(Component.literal(name)
+            Component component = Component.literal(name)
                     .withStyle(style -> style
                             .withColor(nameColor)
                             .withClickEvent(new ClickEvent(
@@ -512,14 +511,18 @@ public final class AdminNotesEvents {
                             .withHoverEvent(new HoverEvent(
                                     HoverEvent.Action.SHOW_TEXT,
                                     Component.literal("SHA-256: " + hash)
-                            ))));
-        }
+                            )));
 
-        if (result.isEmpty()) {
-            return List.of(Component.literal(details));
+            result.add(new TsaDetectionDisplay(
+                    type.toUpperCase(Locale.ROOT) + "|" + hash.toLowerCase(Locale.ROOT),
+                    component
+            ));
         }
 
         return List.copyOf(result);
+    }
+
+    private record TsaDetectionDisplay(String key, Component component) {
     }
 
     private static Class<?> loadExternalClass(String className) throws ClassNotFoundException {
@@ -606,9 +609,15 @@ public final class AdminNotesEvents {
             }
 
             if (detections != null && !detections.isEmpty()) {
+                Set<String> displayedTsaDetections = new HashSet<>();
+
                 for (String detection : detections) {
-                    for (Component detectionComponent : formatTsaDetections(detection)) {
-                        source.sendSuccess(() -> detectionComponent, false);
+                    for (TsaDetectionDisplay entry : parseTsaDetections(detection)) {
+                        if (!displayedTsaDetections.add(entry.key())) {
+                            continue;
+                        }
+
+                        source.sendSuccess(() -> entry.component(), false);
                     }
                 }
             }
