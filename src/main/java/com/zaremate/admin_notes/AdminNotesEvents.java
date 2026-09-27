@@ -489,6 +489,8 @@ public final class AdminNotesEvents {
             String type = matcher.group(1);
             String name = matcher.group(2)
                     .trim()
+                    .replaceAll("§.", "")
+                    .replace('§', ' ')
                     .replace('_', ' ');
             String hash = matcher.group(3);
 
