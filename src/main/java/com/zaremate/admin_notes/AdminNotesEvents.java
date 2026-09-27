@@ -465,14 +465,14 @@ public final class AdminNotesEvents {
         }
     }
 
-    private static Component formatTsaDetection(String detection) {
+    private static List<Component> formatTsaDetections(String detection) {
         if (detection == null || detection.isBlank()) {
-            return Component.literal("");
+            return List.of();
         }
 
         String details = detection;
-
         int detectedSeparator = details.indexOf("| DETECTED |");
+
         if (detectedSeparator >= 0) {
             details = details.substring(
                     detectedSeparator + "| DETECTED |".length()
@@ -480,28 +480,38 @@ public final class AdminNotesEvents {
         }
 
         java.util.regex.Matcher matcher = java.util.regex.Pattern
-                .compile("^(?:MOD|RESOURCE_PACK)\\s+(.+?)\\s+\\[([0-9a-fA-F]{64})\\]$")
+                .compile("(?:^|,\\s*)(MOD|RESOURCE_PACK)\\s+(.+?)\\s+\\[([0-9a-fA-F]{64})\\]")
                 .matcher(details);
 
-        if (!matcher.matches()) {
-            return Component.literal(details);
+        List<Component> result = new ArrayList<>();
+
+        while (matcher.find()) {
+            String name = matcher.group(2).trim();
+            String hash = matcher.group(3);
+
+            if (name.isEmpty()) {
+                continue;
+            }
+
+            result.add(Component.literal(name)
+                    .withStyle(style -> style
+                            .withColor(0xFFFFFF)
+                            .withUnderlined(true)
+                            .withClickEvent(new ClickEvent(
+                                    ClickEvent.Action.COPY_TO_CLIPBOARD,
+                                    hash
+                            ))
+                            .withHoverEvent(new HoverEvent(
+                                    HoverEvent.Action.SHOW_TEXT,
+                                    Component.literal("SHA-256: " + hash)
+                            ))));
         }
 
-        String name = matcher.group(1).trim();
-        String hash = matcher.group(2);
+        if (result.isEmpty()) {
+            return List.of(Component.literal(details));
+        }
 
-        return Component.literal(name)
-                .withStyle(style -> style
-                        .withColor(0xFFFFFF)
-                        .withUnderlined(true)
-                        .withClickEvent(new ClickEvent(
-                                ClickEvent.Action.COPY_TO_CLIPBOARD,
-                                hash
-                        ))
-                        .withHoverEvent(new HoverEvent(
-                                HoverEvent.Action.SHOW_TEXT,
-                                Component.literal("SHA-256: " + hash)
-                        )));
+        return List.copyOf(result);
     }
 
     private static Class<?> loadExternalClass(String className) throws ClassNotFoundException {
@@ -589,9 +599,9 @@ public final class AdminNotesEvents {
 
             if (detections != null && !detections.isEmpty()) {
                 for (String detection : detections) {
-                    Component detectionComponent = formatTsaDetection(detection);
-
-                    source.sendSuccess(() -> detectionComponent, false);
+                    for (Component detectionComponent : formatTsaDetections(detection)) {
+                        source.sendSuccess(() -> detectionComponent, false);
+                    }
                 }
             }
 
