@@ -181,4 +181,4 @@ The API is intended for server-side use and is available while the Minecraft ser
 
 The `/note <player>` command also supports live integrations. When Airport Security System is installed, Admin Notes queries its public API and displays the current ASS offense timeline as `[ASS]` in gold without storing an ASS note or exposing a note ID.
 
-When Discord Link is installed, Admin Notes also queries `com.zaremate.discordlink.DiscordLinkAPI` and displays the current Minecraft ↔ Discord link as a live `[DISCORD]` section. The link is not stored as an Admin Notes entry.
+When Discord Link is installed, Admin Notes also queries `com.zaremate.discordlink.DiscordLinkAPI` and displays the current Minecraft ↔ Discord link as a live `[DISCORD]` section. The link is not stored as an Admin Notes entry.\n\nWhen TSA Anticheat is installed, Admin Notes queries `com.zaremate.tsa_anticheat.api.TsaAnticheatAPI` and displays the player's current packet-check totals, latest packet-check result, and stored detections as a live `[TSA]` section in gold. TSA data is not stored as an Admin Notes entry and does not receive a note ID.
