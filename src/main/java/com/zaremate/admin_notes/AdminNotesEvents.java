@@ -985,10 +985,66 @@ public final class AdminNotesEvents {
                 }
             }
 
+            boolean normalized = normalizeAuthorNotes();
+            if (normalized) {
+                LOGGER.info("Normalized duplicate admin notes while loading admin notes data.");
+            }
+
             saveData();
         } catch (Exception e) {
             LOGGER.error("Failed to load admin notes.", e);
         }
+    }
+
+    /**
+     * Enforces the one-normal-note-per-author/player rule for data created by
+     * older versions. System notes are intentionally left untouched.
+     */
+    private static boolean normalizeAuthorNotes() {
+        boolean changed = false;
+
+        for (PlayerNotes player : PLAYERS.values()) {
+            if (player == null || player.notes == null || player.notes.size() < 2) {
+                continue;
+            }
+
+            Map<UUID, Integer> latestIndex = new LinkedHashMap<>();
+
+            for (int i = 0; i < player.notes.size(); i++) {
+                AdminNotesAPI.Note note = player.notes.get(i);
+
+                if (note == null || note.isSystem() || note.authorUuid() == null) {
+                    continue;
+                }
+
+                latestIndex.put(note.authorUuid(), i);
+            }
+
+            if (latestIndex.size() == player.notes.size()) {
+                continue;
+            }
+
+            List<AdminNotesAPI.Note> normalized = new ArrayList<>(player.notes.size());
+
+            for (int i = 0; i < player.notes.size(); i++) {
+                AdminNotesAPI.Note note = player.notes.get(i);
+
+                if (note == null || note.isSystem() || note.authorUuid() == null) {
+                    normalized.add(note);
+                    continue;
+                }
+
+                if (latestIndex.get(note.authorUuid()) == i) {
+                    normalized.add(note);
+                } else {
+                    changed = true;
+                }
+            }
+
+            player.notes = normalized;
+        }
+
+        return changed;
     }
 
     private static PlayerNotes parsePlayerNotes(String playerUuid, JsonElement element) {
