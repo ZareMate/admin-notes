@@ -11,8 +11,9 @@ import java.util.UUID;
 /**
  * Public API for interacting with Admin Notes from other server-side mods.
  *
- * <p>Each note has its own UUID, so a player can have any number of notes
- * from the same author or from the system.</p>
+ * <p>A player can have at most one normal note from each author. Adding a
+ * new note from an author replaces that author's existing note for the player.
+ * System-generated notes are separate and are not affected by this rule.</p>
  *
  * <p>System notes have a {@code null} author UUID and author name.</p>
  *
@@ -94,8 +95,9 @@ public final class AdminNotesAPI {
     /**
      * Adds a normal admin/mod-authored note.
      *
-     * <p>Unlike the old API, adding another note from the same author does not
-     * replace an existing note.</p>
+     * <p>Each author can have only one normal note per player. If the author
+     * already has a note for the player, that note is replaced with the new
+     * text.</p>
      */
     public static Note addNote(
             UUID playerUuid,
@@ -130,6 +132,18 @@ public final class AdminNotesAPI {
         synchronized (AdminNotesEvents.DATA_LOCK) {
             AdminNotesEvents.PlayerNotes player =
                     AdminNotesEvents.getOrCreate(playerUuid, resolvePlayerName(playerUuid));
+
+            // One normal note per author/player pair. System notes are not
+            // considered because they have a null author UUID.
+            for (int i = 0; i < player.notes.size(); i++) {
+                Note existing = player.notes.get(i);
+
+                if (authorUuid.equals(existing.authorUuid()) && !existing.isSystem()) {
+                    player.notes.set(i, note);
+                    AdminNotesEvents.saveData();
+                    return note;
+                }
+            }
 
             player.notes.add(note);
             AdminNotesEvents.saveData();
